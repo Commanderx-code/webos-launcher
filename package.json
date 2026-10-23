@@ -9,10 +9,13 @@
     "sync": "node tools/sync.mjs",
     "deploy": "node tools/deploy.mjs",
     "auto-update": "node tools/auto-update.mjs",
-    "extend-devmode": "node tools/extend-devmode.mjs"
+    "extend-devmode": "node tools/extend-devmode.mjs",
+    "root-ssh": "node tools/root-ssh.mjs",
+    "install-ipk": "node tools/install-ipk.mjs"
   },
   "devDependencies": {
     "@webos-tools/cli": "^3.2.6",
-    "lgtv2": "^2.1.0"
+    "lgtv2": "^2.1.0",
+    "ssh2": "^1.17.0"
   }
 }

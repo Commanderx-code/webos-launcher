@@ -163,6 +163,7 @@ export async function runSync() {
       plex,
       weather: await locate(config),
       wallpaper: wallpaperFrom(config),
+      theme: config.theme || null,
       screensaverMinutes: config.screensaverMinutes == null ? 5 : config.screensaverMinutes,
       // Your own pictures and videos for the screensaver; without them it shows Plex artwork.
       screensaver: prepareScreensaver(config.screensaverFolder),

@@ -86,6 +86,7 @@ A stock TV won't let an app replace the Home button. Two things get close:
 | `screensaverMinutes` | Idle minutes before the screensaver starts (default 5); `0` turns it off. |
 | `screensaverFolder` | A folder of your own pictures and videos for the screensaver, shown in random order, e.g. `"~/Pictures/Launcher screen savers"`. Pictures stay up 12 seconds; videos play through. Leave it empty to show Plex artwork instead. |
 | `plex.appId` | The app the Plex cards open, by app ID. Defaults to the official Plex app; e.g. `"com.beb.plxnative"` for PlxNative. |
+| `theme` | The starting theme: `ambient`, `aurora`, `midnight` or `photo` (Wallpaper). Once you pick one with the blue button, the TV's choice wins. |
 | `wallpaper` | A picture or a short looping video (`.mp4` or `.webm`) for the Wallpaper theme, e.g. `"~/Videos/loop.mp4"`. Videos play silently. Keep them short and 1080p; the whole file goes onto the TV. |
 
 Pictures and videos for the wallpaper and screensaver are converted to 1080p (JPEG, or silent H.264 video) when they're synced. Converted copies are kept in `media/cache`, so only new or changed files are converted again.
@@ -125,6 +126,19 @@ WantedBy=timers.target
 systemctl --user enable --now webos-launcher-update.timer
 journalctl --user -u webos-launcher-update   # what the last runs did
 ```
+
+## On a rooted TV
+
+With the Homebrew Channel's SSH server on, the tools install over root SSH instead of Developer Mode. Nothing expires, so the Developer Mode timer below isn't needed. **Uninstall the Developer Mode app before restarting a rooted TV**: if it's still installed at startup, the TV can delete every sideloaded app, the Homebrew Channel included.
+
+```sh
+ssh-keygen -t rsa -b 4096 -N "" -f ~/.ssh/tv_root   # once
+npm run root-ssh                                   # installs the key, switches the tools to root SSH
+npm run deploy
+npm run install-ipk -- some-app.ipk                # any other webOS package
+```
+
+`root-ssh` logs in with the Homebrew Channel's default password the first time and installs the key. After the next restart the TV only accepts the key. It also sets `tv.root` in `config.json`, which makes `deploy`, `install-ipk` and the hourly updater use `scp` and the TV's installer service (`luna-send`) over SSH. LG's `ares-install` doesn't work here because the Homebrew Channel's SSH server refuses the second command it sends.
 
 ## Keeping Developer Mode alive
 
