@@ -140,6 +140,16 @@ npm run install-ipk -- some-app.ipk                # any other webOS package
 
 `root-ssh` logs in with the Homebrew Channel's default password the first time and installs the key. After the next restart the TV only accepts the key. It also sets `tv.root` in `config.json`, which makes `deploy`, `install-ipk` and the hourly updater use `scp` and the TV's installer service (`luna-send`) over SSH. LG's `ares-install` doesn't work here because the Homebrew Channel's SSH server refuses the second command it sends.
 
+### Home button
+
+[LG Input Hook](https://github.com/Simon34545/lginputhook), a root-only app from the Homebrew Channel, can make the remote's Home button open the launcher. Install it, open it once (that starts it, and it then starts itself at boot), and put this in `/home/root/.config/lginputhook/keybinds.json` on the TV:
+
+```json
+{"773": {"action": "launch", "id": "com.minimal.launcher"}}
+```
+
+773 is Home on LG's infrared remotes (checked on an AKB75675313). Input Hook reloads the file when it changes. To find another button's code, open Input Hook and watch its log while pressing the button. Don't press "Save changes" in Input Hook's own screen unless it shows your keybinds, because it overwrites the file with what it shows.
+
 ## Keeping Developer Mode alive
 
 When the Developer Mode session runs out, **the TV deletes the launcher**. Current versions of the Developer Mode app give 1000 hours; older ones gave 50. To reset it, press Extend in the Developer Mode app or run:
