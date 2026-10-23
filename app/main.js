@@ -11,9 +11,9 @@
   const KEY = {
     ENTER: 13, LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40,
     BACK: 461, BACKSPACE: 8, ESC: 27,
-    RED: 403, GREEN: 404, YELLOW: 405,
+    RED: 403, GREEN: 404, YELLOW: 405, BLUE: 406,
     // Keyboard stand-ins for the color buttons when previewing in a browser.
-    R: 82, G: 71, Y: 89,
+    R: 82, G: 71, Y: 89, B: 66,
   };
 
   const DEFAULT_INPUTS = [1, 2, 3, 4].map((n) => ({ id: 'HDMI_' + n, title: 'HDMI ' + n, appId: 'com.webos.app.hdmi' + n }));
@@ -22,6 +22,14 @@
   let apps = (data.apps || []).slice();
   const inputs = data.inputs && data.inputs.length ? data.inputs : DEFAULT_INPUTS;
   const plex = data.plex && data.plex.server && data.plex.token ? data.plex : null;
+
+  const THEMES = [
+    { id: 'ambient', name: 'Ambient' },
+    { id: 'aurora', name: 'Aurora' },
+    { id: 'midnight', name: 'Midnight' },
+  ];
+  if (data.wallpaper) THEMES.push({ id: 'photo', name: 'Wallpaper' });
+  const AMBIENT_FALLBACK = 'hsl(222, 30%, 24%)';
 
   const store = {
     get(key, fallback) {
@@ -48,6 +56,7 @@
     editing: null,   // key of the app being moved
     focus: null,     // key of the focused tile, e.g. "app:netflix"
     zone: 'grid',    // 'grid' or 'panel'
+    theme: store.get('theme', THEMES[0].id),
     panel: null,     // Continue Watching row under an app tile
   };
 
@@ -316,7 +325,45 @@
       const box = tile.getBoundingClientRect();
       keepInViewY(box.top, box.bottom);
     }
+    const item = focusedItem();
+    const color = state.zone === 'panel' && state.panel ? state.panel.app.bgColor : item && item.kind === 'app' ? item.app.bgColor : null;
+    $('backdrop').style.setProperty('--ambient', ambientColor(color) || AMBIENT_FALLBACK);
     renderHints();
+  }
+
+  // An app's card color, toned down to glow behind white text. Black, white and grays
+  // have no hue to borrow, so they get the fallback.
+  function ambientColor(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+    if (!m) return null;
+    const n = parseInt(m[1], 16);
+    const r = (n >> 16) / 255;
+    const g = ((n >> 8) & 255) / 255;
+    const b = (n & 255) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    const d = max - min;
+    if (d < 0.12) return null;
+    const s = d / (1 - Math.abs(2 * l - 1));
+    let h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    h = Math.round(h * 60 + 360) % 360;
+    return 'hsl(' + h + ', ' + Math.round(Math.min(s, 0.7) * 100) + '%, ' + Math.round(Math.min(l, 0.38) * 100) + '%)';
+  }
+
+  function applyTheme() {
+    if (!THEMES.some((t) => t.id === state.theme)) state.theme = THEMES[0].id;
+    $('app').className = 'theme-' + state.theme;
+    $('backdrop').style.backgroundImage = state.theme === 'photo' ? 'url("' + data.wallpaper + '")' : '';
+  }
+
+  function cycleTheme() {
+    const i = THEMES.map((t) => t.id).indexOf(state.theme);
+    const next = THEMES[(i + 1) % THEMES.length];
+    state.theme = next.id;
+    store.set('theme', next.id);
+    applyTheme();
+    toast('Theme: ' + next.name);
   }
 
   function cssEscape(s) {
@@ -376,6 +423,7 @@
       add('key-text', 'OK', 'Switch input');
     }
     if (state.hidden.length) add('key-green', '', state.showHidden ? 'Leave out hidden apps' : 'Show hidden apps');
+    add('key-blue', '', 'Theme');
   }
 
   let toastTimer = null;
@@ -565,6 +613,11 @@
     const back = k === KEY.BACK || k === KEY.BACKSPACE || k === KEY.ESC;
     if (dx || dy || back) e.preventDefault();
 
+    if ((k === KEY.BLUE || k === KEY.B) && !state.editing) {
+      cycleTheme();
+      return;
+    }
+
     if (state.editing) {
       if (dx || dy) moveEditing(dx, dy);
       else if (k === KEY.RED || k === KEY.R) toggleHidden(state.editing);
@@ -617,6 +670,7 @@
   // ---------------------------------------------------------------- start
 
   function start() {
+    applyTheme();
     tick();
     setInterval(tick, 10000);
 

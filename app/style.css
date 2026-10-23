@@ -42,7 +42,141 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: radial-gradient(ellipse 80% 60% at 15% 0%, #1b1e25 0%, var(--bg) 70%);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* ------------------------------------------------------------ themes */
+
+#backdrop {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow: hidden;
+  background: var(--bg) center / cover no-repeat;
+}
+
+/* A scrim over the theme's colors keeps text readable; each theme sets its own. */
+#backdrop::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+.topbar,
+#scroller,
+.hints {
+  position: relative;
+  z-index: 1;
+}
+
+.theme-midnight #backdrop {
+  background-image: radial-gradient(ellipse 80% 60% at 15% 0%, #1b1e25 0%, var(--bg) 70%);
+}
+
+/* Ambient: the focused app's color glows down from the top. */
+.theme-ambient #backdrop {
+  background-color: var(--ambient);
+  transition: background-color 0.6s ease;
+}
+
+.theme-ambient #backdrop::after {
+  background: radial-gradient(ellipse 110% 85% at 25% -10%, rgba(12, 13, 16, 0.1) 0%, rgba(12, 13, 16, 0.78) 55%, var(--bg) 90%);
+}
+
+/* Aurora: three soft color fields drifting slowly. Transforms only, so the TV's GPU does the work. */
+.blob {
+  display: none;
+  position: absolute;
+  width: 90rem;
+  height: 60rem;
+  border-radius: 50%;
+  opacity: 0.6;
+  will-change: transform;
+}
+
+.theme-aurora .blob {
+  display: block;
+}
+
+.b1 {
+  top: -28rem;
+  left: -22rem;
+  background: radial-gradient(closest-side, #2a62c9, rgba(42, 98, 201, 0));
+  animation: drift-a 38s ease-in-out infinite alternate;
+}
+
+.b2 {
+  top: 6rem;
+  right: -34rem;
+  background: radial-gradient(closest-side, #7a3cc4, rgba(122, 60, 196, 0));
+  animation: drift-b 46s ease-in-out infinite alternate;
+}
+
+.b3 {
+  bottom: -38rem;
+  left: 18rem;
+  background: radial-gradient(closest-side, #0e8f7c, rgba(14, 143, 124, 0));
+  animation: drift-c 54s ease-in-out infinite alternate;
+}
+
+@keyframes drift-a {
+  to { transform: translate(26rem, 14rem) scale(1.15); }
+}
+
+@keyframes drift-b {
+  to { transform: translate(-30rem, 10rem) scale(0.9); }
+}
+
+@keyframes drift-c {
+  to { transform: translate(22rem, -16rem) scale(1.2); }
+}
+
+.theme-aurora #backdrop::after {
+  background: linear-gradient(to bottom, rgba(12, 13, 16, 0.15), rgba(12, 13, 16, 0.55));
+}
+
+/* Wallpaper: your own picture, darkened toward the bottom where the tiles sit. */
+.theme-photo #backdrop::after {
+  background: linear-gradient(to bottom, rgba(12, 13, 16, 0.25) 0%, rgba(12, 13, 16, 0.7) 45%, rgba(12, 13, 16, 0.88) 100%);
+}
+
+.theme-aurora .tile-label,
+.theme-aurora .section-title,
+.theme-aurora .hints,
+.theme-photo .tile-label,
+.theme-photo .section-title,
+.theme-photo .hints,
+.theme-photo .clock-date {
+  color: #c4c8d0;
+  text-shadow: 0 1px 0.5rem rgba(0, 0, 0, 0.6);
+}
+
+.theme-aurora .panel,
+.theme-photo .panel {
+  background: rgba(23, 25, 30, 0.9);
+}
+
+.theme-aurora .panel::before,
+.theme-photo .panel::before {
+  border-bottom-color: rgba(23, 25, 30, 0.9);
+}
+
+.theme-ambient .tile-input,
+.theme-aurora .tile-input,
+.theme-photo .tile-input {
+  background-color: rgba(255, 255, 255, 0.07);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blob {
+    animation: none;
+  }
 }
 
 /* ------------------------------------------------------------ clock */
@@ -356,6 +490,7 @@ body {
 .key-red { background: #e5484d; }
 .key-green { background: #3fb37a; }
 .key-yellow { background: #f5c542; }
+.key-blue { background: #3b82f6; }
 
 .toast {
   position: absolute;
@@ -370,6 +505,7 @@ body {
   pointer-events: none;
   transform: translate(-50%, -1rem);
   transition: opacity 0.2s, transform 0.2s;
+  z-index: 2;
 }
 
 .toast.show {
