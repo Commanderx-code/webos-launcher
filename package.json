@@ -1,0 +1,17 @@
+{
+  "name": "webos-launcher",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A minimal home screen for LG webOS TVs",
+  "scripts": {
+    "plex-login": "node tools/plex-login.mjs",
+    "sync": "node tools/sync.mjs",
+    "deploy": "node tools/deploy.mjs",
+    "extend-devmode": "node tools/extend-devmode.mjs"
+  },
+  "devDependencies": {
+    "@webos-tools/cli": "^3.2.6",
+    "lgtv2": "^2.1.0"
+  }
+}

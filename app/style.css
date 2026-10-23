@@ -1,0 +1,378 @@
+/* Laid out for a 1920x1080 screen: 1rem is 16px there and scales with the window elsewhere.
+   Chromium 68 (webOS 5): no flex gap, aspect-ratio, inset or :focus-visible. */
+
+:root {
+  --bg: #0c0d10;
+  --bg-raised: #17191e;
+  --tile-bg: #1f2127;
+  --text: #f2f3f5;
+  --muted: #8b909a;
+  --faint: #3d414a;
+  --ring: #ffffff;
+  --accent: #f5b942;
+  --plex: #e5a00d;
+  --gutter: 6rem;
+  --gap: 2rem;
+  --tile-w: calc((120rem - 2 * var(--gutter) - 5 * var(--gap)) / 6);
+  --tile-h: calc(var(--tile-w) * 9 / 16);
+}
+
+html {
+  font-size: calc(100vw / 120);
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  font-family: "LG Smart UI", "Museo Sans", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#app {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: radial-gradient(ellipse 80% 60% at 15% 0%, #1b1e25 0%, var(--bg) 70%);
+}
+
+/* ------------------------------------------------------------ clock */
+
+.topbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 3.5rem var(--gutter) 0;
+}
+
+.clock {
+  text-align: right;
+}
+
+.clock-time {
+  font-size: 4.5rem;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.clock-date {
+  margin-top: 0.625rem;
+  font-size: 1.375rem;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------ grid */
+
+#scroller {
+  flex: 1;
+  overflow: hidden;
+  padding: 0 var(--gutter);
+  /* Rows scrolled under the clock or the hints fade out instead of being cut off. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 2.5rem, #000 calc(100% - 2.5rem), transparent 100%);
+}
+
+#content {
+  padding-bottom: 4rem;
+}
+
+.section {
+  margin-top: 2.25rem;
+}
+
+.section-title {
+  margin: 0 0 1.375rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(6, var(--tile-w));
+  grid-gap: 2.5rem var(--gap);
+}
+
+.empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--muted);
+}
+
+.tile-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tile-w);
+  height: var(--tile-h);
+  overflow: hidden;
+  border-radius: 1rem;
+  background-color: var(--tile-bg);
+  transition: transform 0.15s ease-out, box-shadow 0.15s ease-out, opacity 0.15s;
+}
+
+.tile-box img {
+  max-width: 50%;
+  max-height: 64%;
+}
+
+.tile-letter {
+  font-size: 3.5rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.tile-input {
+  color: var(--muted);
+}
+
+.tile-glyph {
+  width: 5rem;
+  height: 2.5rem;
+}
+
+.tile-label {
+  margin-top: 0.875rem;
+  overflow: hidden;
+  font-size: 1.375rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  transition: color 0.15s;
+}
+
+.tile.focused .tile-box,
+.tile.owner .tile-box {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 0.3125rem var(--ring), 0 1.5rem 3rem rgba(0, 0, 0, 0.55);
+}
+
+.tile.owner .tile-box {
+  box-shadow: 0 0 0 0.3125rem var(--faint);
+}
+
+.tile.focused .tile-label,
+.tile.owner .tile-label {
+  color: var(--text);
+}
+
+.tile.focused .tile-input {
+  color: var(--text);
+}
+
+.tile.is-hidden .tile-box {
+  opacity: 0.35;
+}
+
+.tile.editing .tile-box {
+  opacity: 1;
+  transform: scale(1.06) translateY(-0.5rem);
+  box-shadow: 0 0 0 0.3125rem var(--accent), 0 2rem 3.5rem rgba(0, 0, 0, 0.6);
+}
+
+.tile-badge {
+  position: absolute;
+  top: 0.625rem;
+  left: 0.625rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.65);
+  color: var(--text);
+}
+
+.tile-badge-edit {
+  background: var(--accent);
+  color: #1a1408;
+}
+
+/* ------------------------------------------------------------ Continue Watching */
+
+.panel {
+  position: relative;
+  grid-column: 1 / -1;
+  margin-top: -0.75rem;
+  padding: 1.75rem 2rem 2rem;
+  border-radius: 1.25rem;
+  background: var(--bg-raised);
+}
+
+/* Points up at the tile that opened the panel. */
+.panel::before {
+  content: "";
+  position: absolute;
+  top: -0.875rem;
+  left: calc(var(--caret-col) * (var(--tile-w) + var(--gap)) + var(--tile-w) / 2 - 0.875rem);
+  border-right: 0.875rem solid transparent;
+  border-bottom: 0.875rem solid var(--bg-raised);
+  border-left: 0.875rem solid transparent;
+}
+
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  margin-bottom: 1.5rem;
+}
+
+.panel-title {
+  font-size: 1.625rem;
+  font-weight: 600;
+}
+
+.panel-source {
+  margin-left: 1rem;
+  font-size: 1.25rem;
+  color: var(--plex);
+}
+
+.panel-status {
+  margin-left: auto;
+  font-size: 1.25rem;
+  color: var(--muted);
+}
+
+.panel-status.is-error {
+  color: #ff8a80;
+}
+
+.cards {
+  display: flex;
+  overflow: hidden;
+  /* Room for the focus ring, which the clipping would otherwise cut off. */
+  margin: -0.75rem;
+  padding: 0.75rem;
+}
+
+.card {
+  flex: 0 0 22rem;
+  width: 22rem;
+  margin-right: 1.75rem;
+}
+
+.card-art {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 12.375rem;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  background: var(--tile-bg) center / cover no-repeat;
+  transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
+}
+
+.card-open .card-art img {
+  max-width: 40%;
+  max-height: 55%;
+}
+
+.card.focused .card-art {
+  transform: scale(1.04);
+  box-shadow: 0 0 0 0.3125rem var(--ring), 0 1.25rem 2.5rem rgba(0, 0, 0, 0.55);
+}
+
+.card-progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 0.375rem;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.card-progress span {
+  display: block;
+  height: 100%;
+  background: var(--plex);
+}
+
+.card-title,
+.card-sub {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.card-title {
+  margin-top: 0.875rem;
+  font-size: 1.375rem;
+  font-weight: 600;
+}
+
+.card-sub {
+  margin-top: 0.25rem;
+  font-size: 1.125rem;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------ hints and toast */
+
+.hints {
+  display: flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 1.25rem var(--gutter) 2.5rem;
+  font-size: 1.25rem;
+  color: var(--muted);
+}
+
+.hint {
+  display: flex;
+  align-items: center;
+  margin-right: 2.75rem;
+}
+
+.key {
+  display: inline-block;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  margin-right: 0.75rem;
+  border-radius: 0.375rem;
+}
+
+.key-text {
+  padding: 0 0.5rem;
+  border: 1px solid var(--faint);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.5rem;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+.key-red { background: #e5484d; }
+.key-green { background: #3fb37a; }
+.key-yellow { background: #f5c542; }
+
+.toast {
+  position: absolute;
+  top: 4.5rem;
+  left: 50%;
+  padding: 1rem 1.75rem;
+  border-radius: 999px;
+  font-size: 1.375rem;
+  background: rgba(36, 38, 45, 0.96);
+  box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -1rem);
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
