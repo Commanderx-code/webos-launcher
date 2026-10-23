@@ -9,6 +9,7 @@
   const LONG_PRESS_MS = 600;
   const PLEX_REFRESH_MS = 10 * 60 * 1000;
   const WEATHER_REFRESH_MS = 15 * 60 * 1000;
+  // How long a picture stays up in the screensaver; videos play through instead.
   const SLIDE_MS = 12000;
 
   const KEY = {
@@ -633,7 +634,8 @@
 
   // ---------------------------------------------------------------- screensaver
 
-  const saver = { on: false, idle: null, slides: null, next: 0, front: 0 };
+  const saver = { on: false, idle: null, timer: null, drift: null, deck: [], front: 0, lastVideo: false };
+  const ownSlides = data.screensaver && data.screensaver.length ? data.screensaver : null;
 
   function resetIdle() {
     clearTimeout(saver.idle);
@@ -641,6 +643,7 @@
   }
 
   function saverSlides() {
+    if (ownSlides) return ownSlides.map((s) => ({ src: s.src, video: s.video, caption: '' }));
     const out = [];
     [['continue', 'Continue Watching'], ['recent', 'Recently Added']].forEach((pair) => {
       state.plexRows[pair[0]].items.forEach((it) => {
@@ -650,12 +653,36 @@
     return out;
   }
 
-  function showSlide() {
-    const slides = saverSlides();
-    if (!slides.length) return;
-    const slide = slides[saver.next++ % slides.length];
+  function shuffle(list) {
+    const a = list.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = a[i];
+      a[i] = a[j];
+      a[j] = t;
+    }
+    return a;
+  }
+
+  function nextSlide() {
+    clearTimeout(saver.timer);
+    if (!saver.on) return;
+    if (!saver.deck.length) saver.deck = shuffle(saverSlides());
+    if (!saver.deck.length) return;
+    // Two videos in a row would flash black while the second loads, so slip a picture between.
+    if (saver.deck[0].video && saver.lastVideo) {
+      const i = saver.deck.map((sl) => sl.video).indexOf(false);
+      if (i > 0) saver.deck.unshift(saver.deck.splice(i, 1)[0]);
+    }
+    const slide = saver.deck.shift();
+    saver.lastVideo = slide.video;
+    if (slide.video) playVideoSlide(slide);
+    else showPictureSlide(slide);
+  }
+
+  // Swap only once the picture has loaded, so the fade never shows a half-drawn image.
+  function showPictureSlide(slide) {
     const img = new Image();
-    // Swap only once the picture has loaded, so the fade never shows a half-drawn image.
     img.onload = () => {
       if (!saver.on) return;
       const layers = document.querySelectorAll('.saver-art');
@@ -663,14 +690,63 @@
       layers[saver.front].style.backgroundImage = 'url("' + slide.src + '")';
       layers[saver.front].classList.add('show');
       layers[1 - saver.front].classList.remove('show');
+      hideSaverVideo();
       $('saver-caption').textContent = slide.caption;
+      saver.timer = setTimeout(nextSlide, SLIDE_MS);
+    };
+    img.onerror = () => {
+      saver.timer = setTimeout(nextSlide, 1000);
     };
     img.src = slide.src;
   }
 
-  // Nudges the clock a little each minute so nothing sits in one spot for hours.
+  function playVideoSlide(slide) {
+    const video = $('saver-video');
+    let started = false;
+    video.loop = false;
+    video.onplaying = () => {
+      if (started || !saver.on) return;
+      started = true;
+      video.classList.add('show');
+      Array.prototype.forEach.call(document.querySelectorAll('.saver-art'), (n) => n.classList.remove('show'));
+      $('saver-caption').textContent = slide.caption;
+      // A short clip loops until a picture's worth of time has passed.
+      if (!(video.duration * 1000 >= SLIDE_MS)) {
+        video.loop = true;
+        saver.timer = setTimeout(nextSlide, SLIDE_MS);
+      }
+    };
+    video.onended = () => nextSlide();
+    video.onerror = () => {
+      saver.timer = setTimeout(nextSlide, 1000);
+    };
+    video.src = slide.src;
+    const played = video.play();
+    if (played && played.catch) played.catch(() => {
+      saver.timer = setTimeout(nextSlide, 1000);
+    });
+  }
+
+  // Fades the video out, then stops it so the TV isn't decoding it in the background.
+  function hideSaverVideo() {
+    const video = $('saver-video');
+    if (!video.classList.contains('show')) return;
+    video.classList.remove('show');
+    setTimeout(() => {
+      if (video.classList.contains('show')) return;
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    }, 2000);
+  }
+
+  // Nudges the clock a little now and then so nothing sits in one spot for hours.
   function driftSaverInfo() {
     $('saver-info').style.transform = 'translate(' + Math.round(Math.random() * 40 - 20) + 'px, ' + Math.round(Math.random() * 30 - 15) + 'px)';
+  }
+
+  function wallVideo() {
+    return $('backdrop').querySelector('video');
   }
 
   function startSaver() {
@@ -679,21 +755,31 @@
       return;
     }
     saver.on = true;
-    saver.next = Math.floor(Math.random() * Math.max(1, saverSlides().length));
+    saver.deck = [];
+    saver.lastVideo = false;
+    // One video at a time: the wallpaper rests while the screensaver runs.
+    if (wallVideo()) wallVideo().pause();
     $('saver').classList.add('show');
     driftSaverInfo();
-    showSlide();
-    saver.slides = setInterval(() => {
-      showSlide();
-      driftSaverInfo();
-    }, SLIDE_MS);
+    saver.drift = setInterval(driftSaverInfo, 30000);
+    nextSlide();
   }
 
   function stopSaver() {
     saver.on = false;
-    clearInterval(saver.slides);
+    clearTimeout(saver.timer);
+    clearInterval(saver.drift);
     $('saver').classList.remove('show');
     Array.prototype.forEach.call(document.querySelectorAll('.saver-art'), (n) => n.classList.remove('show'));
+    const video = $('saver-video');
+    video.classList.remove('show');
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+    if (wallVideo()) {
+      const played = wallVideo().play();
+      if (played && played.catch) played.catch(() => {});
+    }
     resetIdle();
   }
 

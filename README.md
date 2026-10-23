@@ -8,7 +8,7 @@ A minimal home screen for LG webOS TVs, made for a stock TV in Developer Mode (w
 - **All Apps**: everything else, which you can rearrange and hide
 - **Inputs**: only the ones with something plugged in, named after the device when it says what it is
 - **Themes**: **Ambient** (the focused app's color glows behind the grid), **Aurora** (slowly drifting colors), **Midnight** (plain dark) and **Wallpaper** (your own picture or looping video)
-- **Screensaver**: after a few idle minutes, a big clock and the weather over slowly changing Plex artwork
+- **Screensaver**: after a few idle minutes, a big clock and the weather over your own pictures and videos, or Plex artwork
 
 There's no build step. The app is plain HTML, CSS and JavaScript in `app/`, written for the Chromium 68 engine that webOS 5 runs.
 
@@ -84,9 +84,12 @@ A stock TV won't let an app replace the Home button. Two things get close:
 | `showAllInputs` | `true` to show inputs with nothing plugged in. |
 | `weather.zip` | The ZIP code for the weather. Leave `weather` out to hide it. `weather.units` is `fahrenheit` or `celsius`. |
 | `screensaverMinutes` | Idle minutes before the screensaver starts (default 5); `0` turns it off. |
+| `screensaverFolder` | A folder of your own pictures and videos for the screensaver, shown in random order, e.g. `"~/Pictures/Launcher screen savers"`. Pictures stay up 12 seconds; videos play through. Leave it empty to show Plex artwork instead. |
 | `wallpaper` | A picture or a short looping video (`.mp4` or `.webm`) for the Wallpaper theme, e.g. `"~/Videos/loop.mp4"`. Videos play silently. Keep them short and 1080p; the whole file goes onto the TV. |
 
-The updater picks up changes here within the hour. To see them right away, run `npm run sync` and `npm run deploy`.
+Pictures and videos for the wallpaper and screensaver are converted to 1080p (JPEG, or silent H.264 video) when they're synced. Converted copies are kept in `media/cache`, so only new or changed files are converted again.
+
+The updater picks up changes here, and files added to the screensaver folder, within the hour. To see them right away, run `npm run sync` and `npm run deploy`.
 
 ## Automatic updates
 
