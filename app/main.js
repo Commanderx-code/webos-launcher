@@ -632,7 +632,7 @@
         id: lp.id,
         title: lp.title,
         icon: lp.largeIcon || lp.icon,
-        bgColor: lp.bgColor,
+        bgColor: lp.iconColor || lp.bgColor,
         params: lp.params,
       }));
       render();

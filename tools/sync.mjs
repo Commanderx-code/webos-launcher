@@ -77,7 +77,8 @@ lgtv.on('connect', async () => {
         id: lp.id,
         title: lp.title,
         icon: await saveIcon(lp.largeIcon || lp.icon, key),
-        bgColor: lp.bgColor || null,
+        // webOS 5's home bar colors each app card with iconColor; bgColor is usually empty.
+        bgColor: lp.iconColor || lp.bgColor || null,
         params: lp.params || null,
       });
     }
