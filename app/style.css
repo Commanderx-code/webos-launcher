@@ -15,6 +15,9 @@
   --gap: 2rem;
   --tile-w: calc((120rem - 2 * var(--gutter) - 5 * var(--gap)) / 6);
   --tile-h: calc(var(--tile-w) * 9 / 16);
+  /* Favorites and Plex rows: five across, bigger than the app grid's six. */
+  --row-w: calc((120rem - 2 * var(--gutter) - 4 * var(--gap)) / 5);
+  --row-h: calc(var(--row-w) * 9 / 16);
 }
 
 html {
@@ -141,7 +144,16 @@ body {
   background: linear-gradient(to bottom, rgba(12, 13, 16, 0.15), rgba(12, 13, 16, 0.55));
 }
 
-/* Wallpaper: your own picture, darkened toward the bottom where the tiles sit. */
+.wall-video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Wallpaper: your own picture or video, darkened toward the bottom where the tiles sit. */
 .theme-photo #backdrop::after {
   background: linear-gradient(to bottom, rgba(12, 13, 16, 0.25) 0%, rgba(12, 13, 16, 0.7) 45%, rgba(12, 13, 16, 0.88) 100%);
 }
@@ -152,19 +164,12 @@ body {
 .theme-photo .tile-label,
 .theme-photo .section-title,
 .theme-photo .hints,
-.theme-photo .clock-date {
+.theme-photo .clock-date,
+.theme-aurora .card-sub,
+.theme-photo .card-sub,
+.theme-photo .weather-detail {
   color: #c4c8d0;
   text-shadow: 0 1px 0.5rem rgba(0, 0, 0, 0.6);
-}
-
-.theme-aurora .panel,
-.theme-photo .panel {
-  background: rgba(23, 25, 30, 0.9);
-}
-
-.theme-aurora .panel::before,
-.theme-photo .panel::before {
-  border-bottom-color: rgba(23, 25, 30, 0.9);
 }
 
 .theme-ambient .tile-input,
@@ -183,8 +188,42 @@ body {
 
 .topbar {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   padding: 3.5rem var(--gutter) 0;
+}
+
+.weather {
+  display: flex;
+  align-items: center;
+}
+
+.weather:not(:empty) {
+  margin-right: 3rem;
+  padding-right: 3rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.weather-icon svg {
+  display: block;
+  width: 3.75rem;
+  height: 3.75rem;
+}
+
+.weather-temp {
+  margin-left: 1rem;
+  font-size: 3.5rem;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.weather-detail {
+  display: flex;
+  flex-direction: column;
+  margin-left: 1.25rem;
+  font-size: 1.25rem;
+  line-height: 1.5;
+  color: var(--muted);
 }
 
 .clock {
@@ -229,6 +268,22 @@ body {
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+.section-source {
+  margin-left: 0.875rem;
+  color: var(--plex);
+}
+
+.section-status {
+  margin-left: 1.5rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.section-status.is-error {
+  color: #ff8a80;
 }
 
 .grid {
@@ -287,18 +342,12 @@ body {
   transition: color 0.15s;
 }
 
-.tile.focused .tile-box,
-.tile.owner .tile-box {
+.tile.focused .tile-box {
   transform: scale(1.06);
   box-shadow: 0 0 0 0.3125rem var(--ring), 0 1.5rem 3rem rgba(0, 0, 0, 0.55);
 }
 
-.tile.owner .tile-box {
-  box-shadow: 0 0 0 0.3125rem var(--faint);
-}
-
-.tile.focused .tile-label,
-.tile.owner .tile-label {
+.tile.focused .tile-label {
   color: var(--text);
 }
 
@@ -333,56 +382,9 @@ body {
   color: #1a1408;
 }
 
-/* ------------------------------------------------------------ Continue Watching */
+/* ------------------------------------------------------------ Favorites and Plex rows */
 
-.panel {
-  position: relative;
-  grid-column: 1 / -1;
-  margin-top: -0.75rem;
-  padding: 1.75rem 2rem 2rem;
-  border-radius: 1.25rem;
-  background: var(--bg-raised);
-}
-
-/* Points up at the tile that opened the panel. */
-.panel::before {
-  content: "";
-  position: absolute;
-  top: -0.875rem;
-  left: calc(var(--caret-col) * (var(--tile-w) + var(--gap)) + var(--tile-w) / 2 - 0.875rem);
-  border-right: 0.875rem solid transparent;
-  border-bottom: 0.875rem solid var(--bg-raised);
-  border-left: 0.875rem solid transparent;
-}
-
-.panel-head {
-  display: flex;
-  align-items: baseline;
-  margin-bottom: 1.5rem;
-}
-
-.panel-title {
-  font-size: 1.625rem;
-  font-weight: 600;
-}
-
-.panel-source {
-  margin-left: 1rem;
-  font-size: 1.25rem;
-  color: var(--plex);
-}
-
-.panel-status {
-  margin-left: auto;
-  font-size: 1.25rem;
-  color: var(--muted);
-}
-
-.panel-status.is-error {
-  color: #ff8a80;
-}
-
-.cards {
+.row {
   display: flex;
   overflow: hidden;
   /* Room for the focus ring, which the clipping would otherwise cut off. */
@@ -390,31 +392,33 @@ body {
   padding: 0.75rem;
 }
 
-.card {
-  flex: 0 0 22rem;
-  width: 22rem;
-  margin-right: 1.75rem;
+.row > * {
+  flex: 0 0 var(--row-w);
+  width: var(--row-w);
+  margin-right: var(--gap);
+}
+
+.tile-big .tile-box {
+  width: var(--row-w);
+  height: var(--row-h);
+}
+
+.tile-big .tile-box img {
+  max-width: 46%;
+  max-height: 60%;
 }
 
 .card-art {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 12.375rem;
+  height: var(--row-h);
   overflow: hidden;
-  border-radius: 0.75rem;
+  border-radius: 1rem;
   background: var(--tile-bg) center / cover no-repeat;
   transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
 }
 
-.card-open .card-art img {
-  max-width: 40%;
-  max-height: 55%;
-}
-
 .card.focused .card-art {
-  transform: scale(1.04);
+  transform: scale(1.06);
   box-shadow: 0 0 0 0.3125rem var(--ring), 0 1.25rem 2.5rem rgba(0, 0, 0, 0.55);
 }
 
@@ -511,4 +515,108 @@ body {
 .toast.show {
   opacity: 1;
   transform: translate(-50%, 0);
+}
+
+/* ------------------------------------------------------------ screensaver */
+
+.saver {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 5;
+  overflow: hidden;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1.2s ease;
+}
+
+.saver.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Two layers take turns: the new picture fades in over the old one and slowly zooms. */
+.saver-art {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: center / cover no-repeat;
+  opacity: 0;
+  transform: scale(1);
+  transition: opacity 2s ease, transform 0s linear 2s;
+}
+
+.saver-art.show {
+  opacity: 1;
+  transform: scale(1.08);
+  transition: opacity 2s ease, transform 14s linear;
+}
+
+.saver::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: linear-gradient(to top right, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.35) 45%, rgba(0, 0, 0, 0) 75%);
+}
+
+.saver-info {
+  position: absolute;
+  bottom: 5rem;
+  left: var(--gutter);
+  z-index: 1;
+  text-shadow: 0 2px 1rem rgba(0, 0, 0, 0.6);
+  transition: transform 3s ease;
+}
+
+.saver-time {
+  font-size: 9rem;
+  font-weight: 200;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.saver-date {
+  margin-top: 1rem;
+  font-size: 2rem;
+  color: #d6d9df;
+}
+
+.saver-weather {
+  display: flex;
+  align-items: center;
+  margin-top: 1.5rem;
+}
+
+.saver-weather .weather-icon svg {
+  width: 3rem;
+  height: 3rem;
+}
+
+.saver-weather .weather-temp {
+  font-size: 2.5rem;
+}
+
+.saver-weather .weather-detail {
+  color: #d6d9df;
+}
+
+.saver-caption {
+  margin-top: 2rem;
+  font-size: 1.25rem;
+  letter-spacing: 0.04em;
+  color: #b8bcc5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .saver-art.show {
+    transform: none;
+  }
 }

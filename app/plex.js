@@ -1,4 +1,4 @@
-// Reads Continue Watching from a Plex Media Server.
+// Reads Continue Watching and Recently Added from a Plex Media Server.
 window.Plex = (function () {
   'use strict';
 
@@ -38,14 +38,42 @@ window.Plex = (function () {
   function toItem(cfg, m) {
     const episode = m.type === 'episode';
     const left = m.duration ? Math.max(1, Math.round((m.duration - (m.viewOffset || 0)) / 60000)) : null;
+    const backdrop = episode ? m.grandparentArt || m.art : m.art;
     return {
       title: episode ? m.grandparentTitle : m.title,
       subtitle: episode ? 'S' + m.parentIndex + ' · E' + m.index + '  ' + m.title : (m.year ? String(m.year) : ''),
       meta: m.viewOffset ? (left ? left + ' min left' : '') : 'Up next',
       progress: m.viewOffset && m.duration ? Math.min(1, m.viewOffset / m.duration) : 0,
       image: image(cfg, episode ? (m.thumb || m.grandparentArt) : (m.art || m.thumb), 480, 270),
+      backdrop: image(cfg, backdrop, 1920, 1080),
       ratingKey: m.ratingKey,
     };
+  }
+
+  // New seasons arrive one row per season; show each show once.
+  function recentlyAdded(cfg) {
+    return getJSON(serverUrl(cfg, '/library/recentlyAdded', PAGE)).then((json) => {
+      const seen = {};
+      const items = [];
+      ((json.MediaContainer && json.MediaContainer.Metadata) || []).forEach((m) => {
+        const show = m.type === 'season' ? m.parentTitle : m.type === 'episode' ? m.grandparentTitle : null;
+        if (show && seen[show]) return;
+        if (show) seen[show] = true;
+        let subtitle = m.year ? String(m.year) : '';
+        if (m.type === 'season') subtitle = m.title;
+        if (m.type === 'episode') subtitle = 'S' + m.parentIndex + ' · E' + m.index + '  ' + m.title;
+        items.push({
+          title: show || m.title,
+          subtitle: subtitle,
+          meta: '',
+          progress: 0,
+          image: image(cfg, m.art || m.parentArt || m.grandparentArt || m.thumb, 480, 270),
+          backdrop: image(cfg, m.art || m.parentArt || m.grandparentArt, 1920, 1080),
+          ratingKey: m.ratingKey,
+        });
+      });
+      return items.slice(0, 20);
+    });
   }
 
   // Newer servers have the merged Continue Watching hub; older ones only On Deck.
@@ -58,5 +86,5 @@ window.Plex = (function () {
       .then((json) => ((json.MediaContainer && json.MediaContainer.Metadata) || []).map((m) => toItem(cfg, m)));
   }
 
-  return { continueWatching: continueWatching };
+  return { continueWatching: continueWatching, recentlyAdded: recentlyAdded };
 })();

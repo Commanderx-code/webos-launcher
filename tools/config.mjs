@@ -1,4 +1,5 @@
-import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -47,4 +48,33 @@ export function bin(name) {
     process.exit(1);
   }
   return file;
+}
+
+const INSTALLED = path.join(ROOT, 'dist', 'installed.json');
+
+function filesUnder(dir) {
+  return readdirSync(dir, { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory() ? filesUnder(path.join(dir, e.name)) : [path.join(dir, e.name)]))
+    .sort();
+}
+
+// A fingerprint of everything that goes into the package, minus the sync's timestamp, so an
+// unchanged sync matches the last install.
+export function dataSignature() {
+  const hash = createHash('sha256');
+  for (const file of filesUnder(APP_DIR)) {
+    let content = readFileSync(file);
+    if (file === path.join(DATA_DIR, 'data.js')) content = content.toString().replace(/"generatedAt": "[^"]*",?/, '');
+    hash.update(path.relative(APP_DIR, file)).update('\0').update(content).update('\0');
+  }
+  return hash.digest('hex');
+}
+
+export function readInstalledSignature() {
+  return existsSync(INSTALLED) ? JSON.parse(readFileSync(INSTALLED, 'utf8')).signature : null;
+}
+
+export function saveInstalledSignature() {
+  mkdirSync(path.dirname(INSTALLED), { recursive: true });
+  writeFileSync(INSTALLED, JSON.stringify({ signature: dataSignature(), installedAt: new Date().toISOString() }, null, 2) + '\n');
 }

@@ -8,6 +8,7 @@
     "plex-login": "node tools/plex-login.mjs",
     "sync": "node tools/sync.mjs",
     "deploy": "node tools/deploy.mjs",
+    "auto-update": "node tools/auto-update.mjs",
     "extend-devmode": "node tools/extend-devmode.mjs"
   },
   "devDependencies": {

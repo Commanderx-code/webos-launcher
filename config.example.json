@@ -3,8 +3,21 @@
     "host": "192.168.1.50",
     "device": "tv"
   },
-  "wallpaper": "",
+  "favorites": [
+    "Netflix",
+    "YouTube"
+  ],
   "exclude": [],
+  "inputNames": {
+    "HDMI_1": "Game Console"
+  },
+  "showAllInputs": false,
+  "weather": {
+    "zip": "10001",
+    "units": "fahrenheit"
+  },
+  "screensaverMinutes": 5,
+  "wallpaper": "",
   "plex": {
     "server": "http://192.168.1.10:32400",
     "token": ""

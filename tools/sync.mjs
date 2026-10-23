@@ -6,12 +6,11 @@ import http from 'node:http';
 import https from 'node:https';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { DATA_DIR, ROOT, readAppInfo, readConfig, requireTvHost, writePrivate } from './config.mjs';
+import { pathToFileURL } from 'node:url';
+import { DATA_DIR, ROOT, readAppInfo, readConfig, requireTvHost, writeConfig, writePrivate } from './config.mjs';
 
-const config = readConfig();
-const host = requireTvHost(config);
-const selfId = readAppInfo().id;
 const ICON_DIR = path.join(DATA_DIR, 'icons');
+const VIDEO_EXTS = ['.mp4', '.webm', '.mov', '.m4v'];
 
 function download(url) {
   return new Promise((resolve, reject) => {
@@ -32,30 +31,57 @@ function download(url) {
   });
 }
 
-async function saveIcon(url, name) {
-  if (!url) return null;
-  const absolute = /^https?:/.test(url) ? url : `http://${host}:3000${url.startsWith('/') ? '' : '/'}${url}`;
-  const ext = (path.extname(new URL(absolute).pathname) || '.png').toLowerCase();
-  const file = name.replace(/[^a-z0-9._-]/gi, '_') + ext;
+function connect(host) {
+  return new Promise((resolve, reject) => {
+    const lgtv = new LGTV({ host, reconnect: false });
+    lgtv.on('prompt', () => console.log('Accept the connection request on the TV with the remote…'));
+    lgtv.on('error', reject);
+    lgtv.on('connect', () => resolve(lgtv));
+  });
+}
+
+// Turns the ZIP code in config.json into coordinates for the weather service. The answer is
+// saved in config.json, so a later sync never loses the weather to a failed lookup.
+async function locate(config) {
+  const weather = config.weather;
+  if (!weather || !weather.zip) return null;
+  const units = weather.units || 'fahrenheit';
+  const saved = weather.located;
+  if (saved && saved.zip === weather.zip) return { latitude: saved.latitude, longitude: saved.longitude, place: saved.place, units };
+  const url = 'https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&format=json' +
+    `&countryCode=${encodeURIComponent(weather.country || 'US')}&name=${encodeURIComponent(weather.zip)}`;
   try {
-    writeFileSync(path.join(ICON_DIR, file), await download(absolute));
-    return `data/icons/${file}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    const place = ((await res.json()).results || [])[0];
+    if (!place) throw new Error(`no place found for ${weather.zip}`);
+    weather.located = { zip: weather.zip, latitude: place.latitude, longitude: place.longitude, place: place.name };
+    writeConfig(config);
+    return { latitude: place.latitude, longitude: place.longitude, place: place.name, units };
   } catch (err) {
-    console.warn(`  no icon for ${name}: ${err.message}`);
+    console.warn(`Weather left out: ${err.message}`);
     return null;
   }
 }
 
-const lgtv = new LGTV({ host, reconnect: false });
+function wallpaperFrom(config) {
+  for (const f of readdirSync(DATA_DIR)) if (f.startsWith('wallpaper.')) rmSync(path.join(DATA_DIR, f));
+  if (!config.wallpaper) return null;
+  const src = path.resolve(ROOT, config.wallpaper.replace(/^~(?=\/)/, process.env.HOME));
+  if (!existsSync(src)) {
+    console.warn(`Wallpaper ${src} not found; leaving the Wallpaper theme out.`);
+    return null;
+  }
+  const ext = path.extname(src).toLowerCase();
+  copyFileSync(src, path.join(DATA_DIR, `wallpaper${ext}`));
+  return { src: `data/wallpaper${ext}`, video: VIDEO_EXTS.includes(ext) };
+}
 
-lgtv.on('prompt', () => console.log('Accept the connection request on the TV with the remote…'));
-lgtv.on('error', (err) => {
-  console.error(`Couldn't connect to the TV at ${host}: ${err.message}`);
-  console.error('Check that the TV is on and LG Connect Apps is enabled (webOS 5: Settings → All Settings → Connection → Mobile Connection Management).');
-  process.exit(1);
-});
+export async function runSync() {
+  const config = readConfig();
+  const host = requireTvHost(config);
+  const selfId = readAppInfo().id;
+  const lgtv = await connect(host);
 
-lgtv.on('connect', async () => {
   try {
     const { launchPoints = [] } = await lgtv.request('ssap://com.webos.applicationManager/listLaunchPoints');
     let devices = [];
@@ -65,15 +91,30 @@ lgtv.on('connect', async () => {
       console.warn(`Couldn't read the input list (${err.message}); the launcher will show HDMI 1–4.`);
     }
 
+    mkdirSync(DATA_DIR, { recursive: true });
     rmSync(ICON_DIR, { recursive: true, force: true });
     mkdirSync(ICON_DIR, { recursive: true });
 
+    async function saveIcon(url, name) {
+      if (!url) return null;
+      const absolute = /^https?:/.test(url) ? url : `http://${host}:3000${url.startsWith('/') ? '' : '/'}${url}`;
+      const ext = (path.extname(new URL(absolute).pathname) || '.png').toLowerCase();
+      const file = name.replace(/[^a-z0-9._-]/gi, '_') + ext;
+      try {
+        writeFileSync(path.join(ICON_DIR, file), await download(absolute));
+        return `data/icons/${file}`;
+      } catch (err) {
+        console.warn(`  no icon for ${name}: ${err.message}`);
+        return null;
+      }
+    }
+
     // Apps left out of the launcher altogether, by ID or title.
-    const exclude = new Set((config.exclude || []).map((e) => e.toLowerCase()));
+    const matches = (list, lp) => list.some((e) => [lp.id, String(lp.title)].some((v) => v.toLowerCase() === e.toLowerCase()));
     const apps = [];
     for (const lp of launchPoints) {
       if (lp.id === selfId || /^com\.webos\.app\.hdmi/.test(lp.id)) continue;
-      if (exclude.has(lp.id.toLowerCase()) || exclude.has(String(lp.title).toLowerCase())) continue;
+      if (matches(config.exclude || [], lp)) continue;
       const key = lp.launchPointId || lp.id;
       apps.push({
         key,
@@ -86,9 +127,20 @@ lgtv.on('connect', async () => {
       });
     }
 
+    // The starting Favorites row; changes made on the TV with the green button take over after that.
+    const favorites = (config.favorites || [])
+      .map((name) => apps.find((a) => [a.id, a.title].some((v) => v.toLowerCase() === name.toLowerCase())))
+      .filter(Boolean)
+      .map((a) => a.key);
+
+    // Inputs with nothing plugged in are left out unless config.json asks for all of them.
+    // Names: config.json first, then what the device calls itself over HDMI-CEC, then the TV's label.
+    const names = config.inputNames || {};
     const inputs = [];
     for (const d of devices) {
-      inputs.push({ id: d.id, title: d.label || d.id, appId: d.appId });
+      if (d.connected === false && !config.showAllInputs) continue;
+      const cec = (d.subList || []).map((s) => s.osdName).filter(Boolean)[0];
+      inputs.push({ id: d.id, title: names[d.id] || cec || d.label || d.id, appId: d.appId });
     }
 
     let plex = null;
@@ -102,32 +154,36 @@ lgtv.on('connect', async () => {
       if (!found && !config.plex.appId) console.warn('Plex isn\'t installed on the TV; its tile will be missing.');
     }
 
-    // An optional picture of your own for the Wallpaper theme.
-    let wallpaper = null;
-    for (const f of readdirSync(DATA_DIR)) if (f.startsWith('wallpaper.')) rmSync(path.join(DATA_DIR, f));
-    if (config.wallpaper) {
-      const src = path.resolve(ROOT, config.wallpaper.replace(/^~(?=\/)/, process.env.HOME));
-      if (existsSync(src)) {
-        wallpaper = `data/wallpaper${path.extname(src).toLowerCase()}`;
-        copyFileSync(src, path.join(DATA_DIR, path.basename(wallpaper)));
-      } else {
-        console.warn(`Wallpaper ${src} not found; leaving the Wallpaper theme out.`);
-      }
-    }
-
-    const data = { generatedAt: new Date().toISOString(), apps, inputs, plex, wallpaper };
+    const data = {
+      generatedAt: new Date().toISOString(),
+      apps,
+      favorites,
+      inputs,
+      plex,
+      weather: await locate(config),
+      wallpaper: wallpaperFrom(config),
+      screensaverMinutes: config.screensaverMinutes == null ? 5 : config.screensaverMinutes,
+    };
     writePrivate(
       path.join(DATA_DIR, 'data.js'),
       '// Written by `npm run sync`. Rerun it instead of editing.\n' +
         `window.LAUNCHER_DATA = ${JSON.stringify(data, null, 2)};\n`,
     );
-
-    console.log(`Saved ${apps.length} apps and ${inputs.length} inputs${plex ? ', with Plex Continue Watching' : ''}.`);
-    console.log('Next: npm run deploy');
-  } catch (err) {
-    console.error(`Sync failed: ${err.message}`);
-    process.exitCode = 1;
+    return data;
   } finally {
     await lgtv.disconnect();
   }
-});
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try {
+    const data = await runSync();
+    const extras = [data.plex && 'Plex', data.weather && `weather for ${data.weather.place}`].filter(Boolean);
+    console.log(`Saved ${data.apps.length} apps and ${data.inputs.length} inputs${extras.length ? `, with ${extras.join(' and ')}` : ''}.`);
+    console.log('Next: npm run deploy');
+  } catch (err) {
+    console.error(`Sync failed: ${err.message}`);
+    console.error('Check that the TV is on and LG Connect Apps is enabled (webOS 5: Settings → All Settings → Connection → Mobile Connection Management).');
+    process.exitCode = 1;
+  }
+}

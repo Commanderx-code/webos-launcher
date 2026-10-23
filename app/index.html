@@ -9,6 +9,7 @@
   <div id="app">
     <div id="backdrop"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
     <header class="topbar">
+      <div class="weather" id="weather"></div>
       <div class="clock">
         <div class="clock-time" id="time"></div>
         <div class="clock-date" id="date"></div>
@@ -17,12 +18,23 @@
     <main id="scroller"></main>
     <footer class="hints" id="hints"></footer>
     <div class="toast" id="toast"></div>
+    <div class="saver" id="saver">
+      <div class="saver-art"></div>
+      <div class="saver-art"></div>
+      <div class="saver-info" id="saver-info">
+        <div class="saver-time" id="saver-time"></div>
+        <div class="saver-date" id="saver-date"></div>
+        <div class="saver-weather" id="saver-weather"></div>
+        <div class="saver-caption" id="saver-caption"></div>
+      </div>
+    </div>
   </div>
 
   <!-- Written by `npm run sync`; the launcher still starts without it. -->
   <script src="data/data.js"></script>
   <script src="luna.js"></script>
   <script src="plex.js"></script>
+  <script src="weather.js"></script>
   <script src="main.js"></script>
 </body>
 </html>
