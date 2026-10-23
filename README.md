@@ -5,6 +5,7 @@ A minimal home screen for LG webOS TVs, made for a stock TV in Developer Mode (w
 - a grid of your apps, which you can rearrange and hide
 - your HDMI inputs, under the names you gave them on the TV
 - a clock
+- four themes: **Ambient** (the focused app's color glows behind the grid), **Aurora** (slowly drifting colors), **Midnight** (plain dark) and **Wallpaper** (your own picture)
 - Continue Watching from your Plex server. Pressing OK on the Plex tile opens a row of what you're partway through.
 
 There's no build step. The app is plain HTML, CSS and JavaScript in `app/`, written for the Chromium 68 engine that webOS 5 runs.
@@ -18,9 +19,10 @@ There's no build step. The app is plain HTML, CSS and JavaScript in `app/`, writ
 | Hold OK or Yellow | Rearrange or hide | | |
 | Red | | Hide or unhide | |
 | Green | Show hidden apps, or leave them out again | | |
+| Blue | Next theme | | Next theme |
 | Back | Close what's open | Done | Close |
 
-The order and hidden apps are saved on the TV. The Magic Remote pointer also works: hover to focus, click to open.
+The order, hidden apps and theme are saved on the TV. The Magic Remote pointer also works: hover to focus, click to open.
 
 ## Setup
 
@@ -61,6 +63,8 @@ npm run deploy   # packages the app, installs it and opens it
 ```
 
 `sync` writes your apps, their icons, your inputs and the Plex settings into `app/data/`. Rerun `sync` and `deploy` after you install or remove apps on the TV.
+
+To add the Wallpaper theme, set `"wallpaper"` in `config.json` to a picture on your computer (e.g. `"~/Pictures/tv.jpg"`). A 1920×1080 JPEG under 1 MB works best. Then run `sync` and `deploy`.
 
 ### 5. Make it quick to reach
 
@@ -128,4 +132,4 @@ tools/        sync, plex-login, deploy and extend-devmode scripts
 config.json   your TV address and Plex settings; not in git
 ```
 
-To preview in a desktop browser, open `app/index.html` with the window at 1920×1080. Use Enter, the arrow keys, Esc for Back, and R, G and Y for the color buttons.
+To preview in a desktop browser, open `app/index.html` with the window at 1920×1080. Use Enter, the arrow keys, Esc for Back, and R, G, Y and B for the color buttons.

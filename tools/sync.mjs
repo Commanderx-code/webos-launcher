@@ -4,9 +4,9 @@
 import LGTV from 'lgtv2';
 import http from 'node:http';
 import https from 'node:https';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { DATA_DIR, readAppInfo, readConfig, requireTvHost, writePrivate } from './config.mjs';
+import { DATA_DIR, ROOT, readAppInfo, readConfig, requireTvHost, writePrivate } from './config.mjs';
 
 const config = readConfig();
 const host = requireTvHost(config);
@@ -99,7 +99,20 @@ lgtv.on('connect', async () => {
       if (!found && !config.plex.appId) console.warn('Plex isn\'t installed on the TV; its tile will be missing.');
     }
 
-    const data = { generatedAt: new Date().toISOString(), apps, inputs, plex };
+    // An optional picture of your own for the Wallpaper theme.
+    let wallpaper = null;
+    for (const f of readdirSync(DATA_DIR)) if (f.startsWith('wallpaper.')) rmSync(path.join(DATA_DIR, f));
+    if (config.wallpaper) {
+      const src = path.resolve(ROOT, config.wallpaper.replace(/^~(?=\/)/, process.env.HOME));
+      if (existsSync(src)) {
+        wallpaper = `data/wallpaper${path.extname(src).toLowerCase()}`;
+        copyFileSync(src, path.join(DATA_DIR, path.basename(wallpaper)));
+      } else {
+        console.warn(`Wallpaper ${src} not found; leaving the Wallpaper theme out.`);
+      }
+    }
+
+    const data = { generatedAt: new Date().toISOString(), apps, inputs, plex, wallpaper };
     writePrivate(
       path.join(DATA_DIR, 'data.js'),
       '// Written by `npm run sync`. Rerun it instead of editing.\n' +
