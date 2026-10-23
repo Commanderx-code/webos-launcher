@@ -42,7 +42,7 @@ if ((await foregroundApp(host)) === readAppInfo().id) {
 
 console.log('Changes found; reinstalling the launcher.');
 try {
-  deploy({ launch: false });
+  await deploy({ launch: false });
 } catch (err) {
   console.error(err.message);
   process.exitCode = 1;

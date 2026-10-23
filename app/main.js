@@ -64,7 +64,8 @@
     showHidden: false,
     editing: null,   // key of the app being moved
     focus: null,     // key of the focused item, e.g. "app:netflix" or "continue:2"
-    theme: store.get('theme', THEMES[0].id),
+    // config.json can set the starting theme; the blue button's choice wins after that.
+    theme: store.get('theme', data.theme || THEMES[0].id),
     rowIndex: {},    // where focus last was in each scrolling row, to land there again
     weather: null,
     plexRows: {
