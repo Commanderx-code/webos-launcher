@@ -6,7 +6,7 @@ import http from 'node:http';
 import https from 'node:https';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { DATA_DIR, readAppInfo, readConfig, requireTvHost } from './config.mjs';
+import { DATA_DIR, readAppInfo, readConfig, requireTvHost, writePrivate } from './config.mjs';
 
 const config = readConfig();
 const host = requireTvHost(config);
@@ -99,7 +99,7 @@ lgtv.on('connect', async () => {
     }
 
     const data = { generatedAt: new Date().toISOString(), apps, inputs, plex };
-    writeFileSync(
+    writePrivate(
       path.join(DATA_DIR, 'data.js'),
       '// Written by `npm run sync`. Rerun it instead of editing.\n' +
         `window.LAUNCHER_DATA = ${JSON.stringify(data, null, 2)};\n`,

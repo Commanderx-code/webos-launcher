@@ -62,12 +62,18 @@ if (servers.length > 1) {
   server = servers[answer - 1] || server;
 }
 
-// The TV loads the server over the LAN, so prefer a plain local address over a relay.
+if (!server.accessToken) {
+  console.error(`Plex didn't issue a token for ${server.name}. Set plex.server and plex.token in config.json by hand.`);
+  process.exit(1);
+}
+
+// Never a relay. Encrypted plex.direct addresses come first; plain http is the last resort,
+// for servers that answer nothing else.
 const local = (server.connections || []).filter((c) => c.local && !c.relay);
 const candidates = [
-  ...local.map((c) => `http://${c.address}:${c.port}`),
   ...local.map((c) => c.uri),
   ...(server.connections || []).filter((c) => !c.relay && !c.local).map((c) => c.uri),
+  ...local.map((c) => `http://${c.address}:${c.port}`),
 ];
 let base = null;
 for (const url of candidates) {
@@ -76,11 +82,14 @@ for (const url of candidates) {
     break;
   }
 }
+if (base && base.startsWith('http:')) {
+  console.warn(`Only the unencrypted address ${base} answered, so the token will cross your network in plain text.`);
+}
 if (!base) {
   base = candidates[0];
   console.warn(`Couldn't reach ${server.name} from this computer; saved ${base} anyway. Edit config.json if it's wrong.`);
 }
 
-config.plex = { ...(config.plex || {}), clientId, server: base, token: server.accessToken || token, name: server.name };
+config.plex = { ...(config.plex || {}), clientId, server: base, token: server.accessToken, name: server.name };
 writeConfig(config);
 console.log(`Saved ${server.name} at ${base}. Next: npm run sync`);
