@@ -116,6 +116,11 @@
     return orderedApps().filter((a) => !isFavorite(a) && shown(a));
   }
 
+  // The app the Plex cards open: the official Plex app unless config.json names another.
+  function plexApp() {
+    return plex ? apps.filter((a) => a.id === plex.appId)[0] || null : null;
+  }
+
   function appItem(a) {
     return { key: 'app:' + a.key, kind: 'app', app: a };
   }
@@ -432,7 +437,7 @@
       add('key-text', 'OK', 'Open');
       add('key-yellow', '', 'Edit (or hold OK)');
     } else if (item && item.kind === 'plex') {
-      add('key-text', 'OK', 'Open Plex');
+      add('key-text', 'OK', 'Open ' + (plexApp() ? plexApp().title : 'Plex'));
     } else if (item) {
       add('key-text', 'OK', 'Switch input');
     }
@@ -471,9 +476,9 @@
     if (item.kind === 'input') {
       launch(item.input.appId, null, item.input.title);
     } else if (item.kind === 'plex') {
-      // Plex can't be told which item to play, so every card opens the app.
-      const app = apps.filter((a) => a.id === plex.appId)[0];
-      launch(plex.appId, app ? app.params : null, 'Plex');
+      // The app can't be told which item to play, so every card just opens it.
+      const app = plexApp();
+      launch(plex.appId, app ? app.params : null, app ? app.title : 'Plex');
     } else {
       launch(item.app.id, item.app.params, item.app.title);
     }

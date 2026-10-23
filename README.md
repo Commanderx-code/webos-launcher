@@ -85,6 +85,7 @@ A stock TV won't let an app replace the Home button. Two things get close:
 | `weather.zip` | The ZIP code for the weather. Leave `weather` out to hide it. `weather.units` is `fahrenheit` or `celsius`. |
 | `screensaverMinutes` | Idle minutes before the screensaver starts (default 5); `0` turns it off. |
 | `screensaverFolder` | A folder of your own pictures and videos for the screensaver, shown in random order, e.g. `"~/Pictures/Launcher screen savers"`. Pictures stay up 12 seconds; videos play through. Leave it empty to show Plex artwork instead. |
+| `plex.appId` | The app the Plex cards open, by app ID. Defaults to the official Plex app; e.g. `"com.beb.plxnative"` for PlxNative. |
 | `wallpaper` | A picture or a short looping video (`.mp4` or `.webm`) for the Wallpaper theme, e.g. `"~/Videos/loop.mp4"`. Videos play silently. Keep them short and 1080p; the whole file goes onto the TV. |
 
 Pictures and videos for the wallpaper and screensaver are converted to 1080p (JPEG, or silent H.264 video) when they're synced. Converted copies are kept in `media/cache`, so only new or changed files are converted again.
