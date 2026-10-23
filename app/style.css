@@ -186,22 +186,17 @@ body {
 
 /* ------------------------------------------------------------ clock */
 
+/* Weather in the top-left corner, the clock in the top-right, the middle left open. */
 .topbar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   padding: 3.5rem var(--gutter) 0;
 }
 
 .weather {
   display: flex;
   align-items: center;
-}
-
-.weather:not(:empty) {
-  margin-right: 3rem;
-  padding-right: 3rem;
-  border-right: 1px solid rgba(255, 255, 255, 0.16);
 }
 
 .weather-icon svg {
