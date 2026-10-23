@@ -64,6 +64,8 @@ npm run deploy   # packages the app, installs it and opens it
 
 `sync` writes your apps, their icons, your inputs and the Plex settings into `app/data/`. Rerun `sync` and `deploy` after you install or remove apps on the TV.
 
+To leave apps out of the launcher for good, list their names in `"exclude"` in `config.json` (e.g. `["Music", "Sports Alert"]`), then run `sync` and `deploy`. To hide one from the TV instead, hold OK on it and press red.
+
 To add the Wallpaper theme, set `"wallpaper"` in `config.json` to a picture on your computer (e.g. `"~/Pictures/tv.jpg"`). A 1920×1080 JPEG under 1 MB works best. Then run `sync` and `deploy`.
 
 ### 5. Make it quick to reach
