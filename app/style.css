@@ -534,6 +534,21 @@ body {
 }
 
 /* Two layers take turns: the new picture fades in over the old one and slowly zooms. */
+.saver-video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 2s ease;
+}
+
+.saver-video.show {
+  opacity: 1;
+}
+
 .saver-art {
   position: absolute;
   top: 0;
@@ -559,7 +574,10 @@ body {
   right: 0;
   bottom: 0;
   left: 0;
-  background: linear-gradient(to top right, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.35) 45%, rgba(0, 0, 0, 0) 75%);
+  /* Darkest behind the clock, so it reads on bright pictures too. */
+  background:
+    radial-gradient(ellipse 55% 60% at 0% 100%, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0) 100%),
+    linear-gradient(to top right, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0.25) 45%, rgba(0, 0, 0, 0) 75%);
 }
 
 .saver-info {

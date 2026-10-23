@@ -8,6 +8,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DATA_DIR, ROOT, readAppInfo, readConfig, requireTvHost, writeConfig, writePrivate } from './config.mjs';
+import { prepareScreensaver } from './media.mjs';
 
 const ICON_DIR = path.join(DATA_DIR, 'icons');
 const VIDEO_EXTS = ['.mp4', '.webm', '.mov', '.m4v'];
@@ -163,6 +164,8 @@ export async function runSync() {
       weather: await locate(config),
       wallpaper: wallpaperFrom(config),
       screensaverMinutes: config.screensaverMinutes == null ? 5 : config.screensaverMinutes,
+      // Your own pictures and videos for the screensaver; without them it shows Plex artwork.
+      screensaver: prepareScreensaver(config.screensaverFolder),
     };
     writePrivate(
       path.join(DATA_DIR, 'data.js'),

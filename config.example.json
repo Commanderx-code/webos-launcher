@@ -17,6 +17,7 @@
     "units": "fahrenheit"
   },
   "screensaverMinutes": 5,
+  "screensaverFolder": "",
   "wallpaper": "",
   "plex": {
     "server": "http://192.168.1.10:32400",
