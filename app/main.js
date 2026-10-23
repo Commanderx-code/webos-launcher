@@ -1,5 +1,5 @@
-// Minimal launcher: app grid, inputs, clock, rearranging, and Continue Watching under Plex.
-// Plain ES2017 with no optional chaining or newer APIs: webOS 5 runs Chromium 68.
+// Minimal launcher: favorites, Plex rows, app grid and inputs, with a clock, weather, themes
+// and a screensaver. Plain ES2017 with no optional chaining or newer APIs: webOS 5 runs Chromium 68.
 (function () {
   'use strict';
 
@@ -7,6 +7,9 @@
   const SELF_ID = 'com.minimal.launcher';
   const COLS = 6;
   const LONG_PRESS_MS = 600;
+  const PLEX_REFRESH_MS = 10 * 60 * 1000;
+  const WEATHER_REFRESH_MS = 15 * 60 * 1000;
+  const SLIDE_MS = 12000;
 
   const KEY = {
     ENTER: 13, LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40,
@@ -22,13 +25,17 @@
   let apps = (data.apps || []).slice();
   const inputs = data.inputs && data.inputs.length ? data.inputs : DEFAULT_INPUTS;
   const plex = data.plex && data.plex.server && data.plex.token ? data.plex : null;
+  const weatherCfg = data.weather && data.weather.latitude != null ? data.weather : null;
+  const wallpaper = typeof data.wallpaper === 'string' ? { src: data.wallpaper, video: false } : data.wallpaper;
+  // Minutes without a button press before the screensaver starts; 0 turns it off.
+  const saverMinutes = data.screensaverMinutes == null ? 5 : data.screensaverMinutes;
 
   const THEMES = [
     { id: 'ambient', name: 'Ambient' },
     { id: 'aurora', name: 'Aurora' },
     { id: 'midnight', name: 'Midnight' },
   ];
-  if (data.wallpaper) THEMES.push({ id: 'photo', name: 'Wallpaper' });
+  if (wallpaper) THEMES.push({ id: 'photo', name: 'Wallpaper' });
   const AMBIENT_FALLBACK = 'hsl(222, 30%, 24%)';
 
   const store = {
@@ -52,30 +59,21 @@
   const state = {
     order: store.get('order', []),
     hidden: store.get('hidden', []),
+    favorites: store.get('favorites', data.favorites || []),
     showHidden: false,
     editing: null,   // key of the app being moved
-    focus: null,     // key of the focused tile, e.g. "app:netflix"
-    zone: 'grid',    // 'grid' or 'panel'
+    focus: null,     // key of the focused item, e.g. "app:netflix" or "continue:2"
     theme: store.get('theme', THEMES[0].id),
-    panel: null,     // Continue Watching row under an app tile
+    rowIndex: {},    // where focus last was in each scrolling row, to land there again
+    weather: null,
+    plexRows: {
+      continue: { items: store.get('cache.continue', []), error: null, loaded: false },
+      recent: { items: store.get('cache.recent', []), error: null, loaded: false },
+    },
   };
 
   let current = { sections: [], rows: [] };
   let lastPos = { r: 0, c: 0 };
-
-  // Apps whose tile opens a Continue Watching row instead of launching straight away.
-  const providers = [];
-  if (plex) {
-    providers.push({
-      appId: plex.appId,
-      name: 'Plex',
-      load: () => window.Plex.continueWatching(plex),
-    });
-  }
-
-  function providerFor(app) {
-    return providers.filter((p) => p.appId === app.id)[0] || null;
-  }
 
   // ---------------------------------------------------------------- model
 
@@ -93,30 +91,73 @@
     return out;
   }
 
+  function appByKey(key) {
+    return apps.filter((a) => a.key === key)[0] || null;
+  }
+
   function isHidden(app) {
     return state.hidden.indexOf(app.key) !== -1;
   }
 
-  function visibleApps() {
-    return orderedApps().filter((a) => state.showHidden || !isHidden(a) || a.key === state.editing);
+  function isFavorite(app) {
+    return state.favorites.indexOf(app.key) !== -1;
+  }
+
+  function shown(app) {
+    return state.showHidden || !isHidden(app) || app.key === state.editing;
+  }
+
+  function favoriteApps() {
+    return state.favorites.map(appByKey).filter((a) => a && shown(a));
+  }
+
+  function gridApps() {
+    return orderedApps().filter((a) => !isFavorite(a) && shown(a));
+  }
+
+  function appItem(a) {
+    return { key: 'app:' + a.key, kind: 'app', app: a };
+  }
+
+  function plexSection(id, title, emptyText) {
+    const row = state.plexRows[id];
+    let status = '';
+    if (!row.items.length) status = row.error || (row.loaded ? emptyText : 'Loading…');
+    return {
+      id: id,
+      title: title,
+      source: 'Plex',
+      scroll: true,
+      status: status,
+      isError: !!row.error && !row.items.length,
+      items: row.items.map((it, i) => ({ key: id + ':' + i, kind: 'plex', item: it, row: title })),
+    };
   }
 
   function layout() {
-    const sections = [
-      { title: 'Apps', items: visibleApps().map((a) => ({ key: 'app:' + a.key, kind: 'app', app: a })) },
-      { title: 'Inputs', items: inputs.map((i) => ({ key: 'input:' + i.id, kind: 'input', input: i })) },
-    ];
+    const sections = [];
+    const favs = favoriteApps();
+    if (favs.length) sections.push({ id: 'favorites', title: 'Favorites', scroll: true, big: true, items: favs.map(appItem) });
+    if (plex) {
+      sections.push(plexSection('continue', 'Continue Watching', 'Nothing in progress'));
+      sections.push(plexSection('recent', 'Recently Added', 'Nothing new'));
+    }
+    sections.push({ id: 'apps', title: favs.length ? 'All Apps' : 'Apps', items: gridApps().map(appItem) });
+    sections.push({ id: 'inputs', title: 'Inputs', items: inputs.map((i) => ({ key: 'input:' + i.id, kind: 'input', input: i })) });
+
     const rows = [];
     sections.forEach((s) => {
-      for (let i = 0; i < s.items.length; i += COLS) rows.push(s.items.slice(i, i + COLS));
+      if (!s.items.length) return;
+      if (s.scroll) rows.push({ section: s, items: s.items });
+      else for (let i = 0; i < s.items.length; i += COLS) rows.push({ section: s, items: s.items.slice(i, i + COLS) });
     });
     return { sections: sections, rows: rows };
   }
 
   function findPos(key) {
     for (let r = 0; r < current.rows.length; r++) {
-      for (let c = 0; c < current.rows[r].length; c++) {
-        if (current.rows[r][c].key === key) return { r: r, c: c };
+      for (let c = 0; c < current.rows[r].items.length; c++) {
+        if (current.rows[r].items[c].key === key) return { r: r, c: c };
       }
     }
     return null;
@@ -124,7 +165,7 @@
 
   function focusedItem() {
     const pos = findPos(state.focus);
-    return pos ? current.rows[pos.r][pos.c] : null;
+    return pos ? current.rows[pos.r].items[pos.c] : null;
   }
 
   // ---------------------------------------------------------------- rendering
@@ -138,6 +179,10 @@
     return node;
   }
 
+  function nodeFor(key) {
+    return document.querySelector('[data-key="' + String(key).replace(/["\\]/g, '\\$&') + '"]');
+  }
+
   function fallbackLetter(box, title) {
     box.textContent = '';
     box.appendChild(el('span', 'tile-letter', (title || '?').charAt(0).toUpperCase()));
@@ -147,8 +192,19 @@
     '<path d="M3 4h42v9l-5 7H8l-5-7z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>' +
     '<path d="M12 10h24" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>';
 
-  function renderTile(item) {
-    const tile = el('div', 'tile');
+  function bindPointer(node, key) {
+    node.addEventListener('mouseenter', () => {
+      if (!state.editing) setFocus(key);
+    });
+    node.addEventListener('click', () => {
+      if (state.editing) return;
+      setFocus(key);
+      activate();
+    });
+  }
+
+  function renderTile(item, big) {
+    const tile = el('div', big ? 'tile tile-big' : 'tile');
     tile.dataset.key = item.key;
     const box = el('div', 'tile-box');
     let title;
@@ -182,151 +238,95 @@
 
     tile.appendChild(box);
     tile.appendChild(el('div', 'tile-label', title));
-
-    tile.addEventListener('mouseenter', () => {
-      if (!state.editing) setFocus(item.key, 'grid');
-    });
-    tile.addEventListener('click', () => {
-      if (state.editing) return;
-      setFocus(item.key, 'grid');
-      activate();
-    });
+    bindPointer(tile, item.key);
     return tile;
   }
 
-  function panelCards() {
-    const p = state.panel;
-    const cards = [{ kind: 'open' }];
-    p.items.forEach((item) => cards.push({ kind: 'item', item: item }));
-    return cards;
-  }
-
-  function renderPanel(col) {
-    const p = state.panel;
-    const panel = el('div', 'panel');
-    panel.id = 'panel';
-    panel.style.setProperty('--caret-col', col);
-
-    const head = el('div', 'panel-head');
-    head.appendChild(el('div', 'panel-title', 'Continue watching'));
-    head.appendChild(el('div', 'panel-source', p.providerName));
-    let status = '';
-    if (p.status === 'loading') status = 'Loading…';
-    else if (p.status === 'error') status = p.message;
-    else if (!p.items.length) status = 'Nothing in progress';
-    head.appendChild(el('div', 'panel-status' + (p.status === 'error' ? ' is-error' : ''), status));
-    panel.appendChild(head);
-
-    const row = el('div', 'cards');
-    row.id = 'cards';
-    panelCards().forEach((card, i) => {
-      const node = el('div', 'card');
-      const art = el('div', 'card-art');
-      if (card.kind === 'open') {
-        node.classList.add('card-open');
-        if (p.app.bgColor) art.style.backgroundColor = p.app.bgColor;
-        if (p.app.icon) {
-          const img = el('img');
-          img.src = p.app.icon;
-          img.alt = '';
-          art.appendChild(img);
-        }
-        node.appendChild(art);
-        node.appendChild(el('div', 'card-title', 'Open ' + p.app.title));
-        node.appendChild(el('div', 'card-sub', 'Home screen'));
-      } else {
-        const item = card.item;
-        if (item.image) art.style.backgroundImage = 'url("' + item.image + '")';
-        if (item.progress) {
-          const bar = el('div', 'card-progress');
-          const fill = el('span');
-          fill.style.width = (item.progress * 100).toFixed(1) + '%';
-          bar.appendChild(fill);
-          art.appendChild(bar);
-        }
-        node.appendChild(art);
-        node.appendChild(el('div', 'card-title', item.title));
-        node.appendChild(el('div', 'card-sub', [item.subtitle, item.meta].filter(Boolean).join(' · ')));
-      }
-      node.addEventListener('mouseenter', () => {
-        state.panel.index = i;
-        setFocus(state.focus, 'panel');
-      });
-      node.addEventListener('click', () => {
-        state.panel.index = i;
-        setFocus(state.focus, 'panel');
-        activate();
-      });
-      row.appendChild(node);
-    });
-    panel.appendChild(row);
-    return panel;
+  function renderCard(item) {
+    const card = el('div', 'card');
+    card.dataset.key = item.key;
+    const art = el('div', 'card-art');
+    if (item.item.image) art.style.backgroundImage = 'url("' + item.item.image + '")';
+    if (item.item.progress) {
+      const bar = el('div', 'card-progress');
+      const fill = el('span');
+      fill.style.width = (item.item.progress * 100).toFixed(1) + '%';
+      bar.appendChild(fill);
+      art.appendChild(bar);
+    }
+    card.appendChild(art);
+    card.appendChild(el('div', 'card-title', item.item.title));
+    card.appendChild(el('div', 'card-sub', [item.item.subtitle, item.item.meta].filter(Boolean).join(' · ')));
+    bindPointer(card, item.key);
+    return card;
   }
 
   function render() {
     current = layout();
-    // Build off-screen and swap in one step, so the scroll position survives.
+    // Build off-screen and swap in one step, so the page's scroll position survives;
+    // the rows' sideways positions are carried over by hand.
+    const scrolls = {};
+    Array.prototype.forEach.call(document.querySelectorAll('.row'), (r) => { scrolls[r.dataset.section] = r.scrollLeft; });
     const content = el('div');
     content.id = 'content';
-    const panelKey = state.panel ? 'app:' + state.panel.app.key : null;
 
-    current.sections.forEach((section) => {
+    current.sections.forEach((s) => {
+      if (!s.items.length && !s.status && s.id !== 'apps') return;
       const sec = el('section', 'section');
-      sec.appendChild(el('h2', 'section-title', section.title));
-      const grid = el('div', 'grid');
-      if (!section.items.length) {
-        grid.appendChild(el('p', 'empty', 'No apps yet. Run "npm run sync" on your computer, then "npm run deploy".'));
-      }
-      section.items.forEach((item, i) => {
-        grid.appendChild(renderTile(item));
-        const rowStart = i - (i % COLS);
-        const rowEnd = Math.min(rowStart + COLS, section.items.length) - 1;
-        if (i === rowEnd && panelKey) {
-          const col = section.items.slice(rowStart, rowEnd + 1).map((it) => it.key).indexOf(panelKey);
-          if (col !== -1) grid.appendChild(renderPanel(col));
+      const head = el('h2', 'section-title', s.title);
+      if (s.source) head.appendChild(el('span', 'section-source', s.source));
+      if (s.status) head.appendChild(el('span', 'section-status' + (s.isError ? ' is-error' : ''), s.status));
+      sec.appendChild(head);
+
+      if (s.scroll) {
+        if (s.items.length) {
+          const row = el('div', 'row');
+          row.dataset.section = s.id;
+          s.items.forEach((item) => row.appendChild(item.kind === 'plex' ? renderCard(item) : renderTile(item, true)));
+          sec.appendChild(row);
         }
-      });
-      sec.appendChild(grid);
+      } else {
+        const grid = el('div', 'grid');
+        if (!s.items.length) grid.appendChild(el('p', 'empty', s.id === 'apps' && apps.length ? 'Every app is in Favorites.' : 'No apps yet. Run "npm run sync" on your computer, then "npm run deploy".'));
+        s.items.forEach((item) => grid.appendChild(renderTile(item, false)));
+        sec.appendChild(grid);
+      }
       content.appendChild(sec);
     });
+
     const scroller = $('scroller');
     const old = $('content');
     if (old) scroller.replaceChild(content, old);
     else scroller.appendChild(content);
+    Array.prototype.forEach.call(document.querySelectorAll('.row'), (r) => { r.scrollLeft = scrolls[r.dataset.section] || 0; });
 
-    // Focus fell off the list (an app was hidden or uninstalled): take the tile in its place.
+    // Focus fell off the list (an app was hidden or a row emptied): take the item in its place.
     if (!findPos(state.focus) && current.rows.length) {
       const r = Math.min(lastPos.r, current.rows.length - 1);
-      const c = Math.min(lastPos.c, current.rows[r].length - 1);
-      state.focus = current.rows[r][c].key;
+      const c = Math.min(lastPos.c, current.rows[r].items.length - 1);
+      state.focus = current.rows[r].items[c].key;
     }
     applyFocus();
   }
 
   function applyFocus() {
     const pos = findPos(state.focus);
-    if (pos) lastPos = pos;
-
     Array.prototype.forEach.call(document.querySelectorAll('.focused'), (n) => n.classList.remove('focused'));
-    const tile = document.querySelector('.tile[data-key="' + cssEscape(state.focus) + '"]');
-
-    if (state.zone === 'panel' && state.panel) {
-      if (tile) tile.classList.add('owner');
-      const cards = document.querySelectorAll('#cards .card');
-      const card = cards[state.panel.index];
-      if (card) {
-        card.classList.add('focused');
-        keepInViewX($('cards'), card);
-      }
-      const panel = $('panel');
-      if (tile && panel) keepInViewY(tile.getBoundingClientRect().top, panel.getBoundingClientRect().bottom);
-    } else if (tile) {
-      tile.classList.add('focused');
-      const box = tile.getBoundingClientRect();
-      keepInViewY(box.top, box.bottom);
+    const node = nodeFor(state.focus);
+    if (pos && node) {
+      lastPos = pos;
+      const row = current.rows[pos.r];
+      if (row.section.scroll) state.rowIndex[row.section.id] = pos.c;
+      node.classList.add('focused');
+      if (node.parentNode.classList.contains('row')) keepInViewX(node.parentNode, node);
+      // On a section's first row, bring its heading into view too.
+      const firstRow = pos.r === 0 || current.rows[pos.r - 1].section !== row.section;
+      const box = node.getBoundingClientRect();
+      const sec = node.parentNode.parentNode;
+      keepInViewY(firstRow ? sec.getBoundingClientRect().top : box.top, box.bottom);
     }
     const item = focusedItem();
-    const color = state.zone === 'panel' && state.panel ? state.panel.app.bgColor : item && item.kind === 'app' ? item.app.bgColor : null;
+    const color = item && item.kind === 'app' ? item.app.bgColor : null;
     $('backdrop').style.setProperty('--ambient', ambientColor(color) || AMBIENT_FALLBACK);
     renderHints();
   }
@@ -354,7 +354,26 @@
   function applyTheme() {
     if (!THEMES.some((t) => t.id === state.theme)) state.theme = THEMES[0].id;
     $('app').className = 'theme-' + state.theme;
-    $('backdrop').style.backgroundImage = state.theme === 'photo' ? 'url("' + data.wallpaper + '")' : '';
+    const backdrop = $('backdrop');
+    const photo = state.theme === 'photo' && wallpaper;
+    backdrop.style.backgroundImage = photo && !wallpaper.video ? 'url("' + wallpaper.src + '")' : '';
+
+    // A video wallpaper plays only while its theme is on, so it isn't decoding in the background.
+    let video = backdrop.querySelector('video');
+    if (photo && wallpaper.video && !video) {
+      video = el('video', 'wall-video');
+      video.muted = true;
+      video.loop = true;
+      video.autoplay = true;
+      video.setAttribute('playsinline', '');
+      video.src = wallpaper.src;
+      backdrop.insertBefore(video, backdrop.firstChild);
+      const played = video.play();
+      if (played && played.catch) played.catch(() => {});
+    } else if (!(photo && wallpaper.video) && video) {
+      video.pause();
+      backdrop.removeChild(video);
+    }
   }
 
   function cycleTheme() {
@@ -366,10 +385,6 @@
     toast('Theme: ' + next.name);
   }
 
-  function cssEscape(s) {
-    return String(s).replace(/["\\]/g, '\\$&');
-  }
-
   function rem(n) {
     return n * parseFloat(getComputedStyle(document.documentElement).fontSize);
   }
@@ -378,14 +393,14 @@
   function keepInViewY(top, bottom) {
     const scroller = $('scroller');
     const view = scroller.getBoundingClientRect();
-    const margin = rem(4);
+    const margin = rem(3);
     if (top - margin < view.top) scroller.scrollTop -= view.top - (top - margin);
     else if (bottom + margin > view.bottom) scroller.scrollTop += Math.min(bottom + margin - view.bottom, top - margin - view.top);
   }
 
-  function keepInViewX(row, card) {
+  function keepInViewX(row, node) {
     const view = row.getBoundingClientRect();
-    const box = card.getBoundingClientRect();
+    const box = node.getBoundingClientRect();
     const margin = rem(1);
     if (box.left - margin < view.left) row.scrollLeft -= view.left - (box.left - margin);
     else if (box.right + margin > view.right) row.scrollLeft += box.right + margin - view.right;
@@ -404,21 +419,19 @@
     const add = (k, t, l) => bar.appendChild(hint(k, t, l));
 
     if (state.editing) {
-      add('key-text', '◀ ▶ ▲ ▼', 'Move');
-      add('key-red', '', isHidden({ key: state.editing }) ? 'Unhide' : 'Hide');
+      const app = appByKey(state.editing);
+      add('key-text', isFavorite(app) ? '◀ ▶' : '◀ ▶ ▲ ▼', 'Move');
+      add('key-green', '', isFavorite(app) ? 'Remove from Favorites' : 'Add to Favorites');
+      add('key-red', '', isHidden(app) ? 'Unhide' : 'Hide');
       add('key-text', 'OK', 'Done');
-      return;
-    }
-    if (state.zone === 'panel' && state.panel) {
-      add('key-text', '◀ ▶', 'Browse');
-      add('key-text', 'OK', 'Open in ' + state.panel.app.title);
-      add('key-text', 'BACK', 'Close');
       return;
     }
     const item = focusedItem();
     if (item && item.kind === 'app') {
-      add('key-text', 'OK', providerFor(item.app) ? 'Continue watching' : 'Open');
-      add('key-yellow', '', 'Rearrange or hide (or hold OK)');
+      add('key-text', 'OK', 'Open');
+      add('key-yellow', '', 'Edit (or hold OK)');
+    } else if (item && item.kind === 'plex') {
+      add('key-text', 'OK', 'Open Plex');
     } else if (item) {
       add('key-text', 'OK', 'Switch input');
     }
@@ -437,9 +450,8 @@
 
   // ---------------------------------------------------------------- actions
 
-  function setFocus(key, zone) {
+  function setFocus(key) {
     state.focus = key;
-    state.zone = zone || 'grid';
     applyFocus();
   }
 
@@ -453,93 +465,60 @@
   }
 
   function activate() {
-    if (state.zone === 'panel' && state.panel) {
-      // Plex can't be told which item to play, so every card opens the app.
-      launch(state.panel.app.id, state.panel.app.params, state.panel.app.title);
-      return;
-    }
     const item = focusedItem();
     if (!item) return;
     if (item.kind === 'input') {
       launch(item.input.appId, null, item.input.title);
-      return;
+    } else if (item.kind === 'plex') {
+      // Plex can't be told which item to play, so every card opens the app.
+      const app = apps.filter((a) => a.id === plex.appId)[0];
+      launch(plex.appId, app ? app.params : null, 'Plex');
+    } else {
+      launch(item.app.id, item.app.params, item.app.title);
     }
-    const provider = providerFor(item.app);
-    if (provider) openPanel(item.app, provider);
-    else launch(item.app.id, item.app.params, item.app.title);
   }
 
-  function openPanel(app, provider) {
-    if (state.panel && state.panel.app.key === app.key) {
-      setFocus(state.focus, 'panel');
-      return;
-    }
-    const cacheKey = 'cache.' + app.key;
-    state.panel = {
-      app: app,
-      providerName: provider.name,
-      items: store.get(cacheKey, []),
-      status: 'loading',
-      message: '',
-      index: 0,
-    };
-    state.zone = 'panel';
-    render();
-    refreshPanel(provider, cacheKey);
-  }
-
-  function refreshPanel(provider, cacheKey) {
-    const panel = state.panel;
-    provider.load().then((items) => {
-      store.set(cacheKey, items);
-      if (state.panel !== panel) return;
-      panel.items = items;
-      panel.status = 'ready';
-      panel.index = Math.min(panel.index, items.length);
-      render();
-    }, (err) => {
-      if (state.panel !== panel) return;
-      panel.status = 'error';
-      panel.message = err.message;
-      render();
-    });
-  }
-
-  function closePanel() {
-    state.panel = null;
-    state.zone = 'grid';
-    render();
-  }
-
-  function moveGrid(dx, dy) {
+  // Up and down land where you last were in a scrolling row, otherwise on the item
+  // straight above or below.
+  function moveFocus(dx, dy) {
     const pos = findPos(state.focus);
     if (!pos) return;
-    const r = pos.r + dy;
-    let c = pos.c + dx;
-    if (r < 0 || r >= current.rows.length) return;
-    if (dx && (c < 0 || c >= current.rows[r].length)) return;
-    c = Math.min(c, current.rows[r].length - 1);
-    if (state.panel && dy) {
-      // Leaving the tile row the panel hangs under closes it.
-      state.panel = null;
-      state.focus = current.rows[r][c].key;
-      render();
+    const row = current.rows[pos.r];
+    if (dx) {
+      const c = pos.c + dx;
+      if (c >= 0 && c < row.items.length) setFocus(row.items[c].key);
       return;
     }
-    setFocus(current.rows[r][c].key, 'grid');
+    const r = pos.r + dy;
+    if (r < 0 || r >= current.rows.length) return;
+    const target = current.rows[r];
+    const remembered = target.section.scroll ? state.rowIndex[target.section.id] : null;
+    const c = remembered != null ? Math.min(remembered, target.items.length - 1) : nearestByX(target, nodeFor(state.focus));
+    setFocus(target.items[c].key);
   }
 
-  function movePanel(dx) {
-    const count = panelCards().length;
-    state.panel.index = Math.max(0, Math.min(count - 1, state.panel.index + dx));
-    applyFocus();
+  function nearestByX(row, from) {
+    if (!from) return 0;
+    const fb = from.getBoundingClientRect();
+    const x = (fb.left + fb.right) / 2;
+    let best = 0;
+    let bestDist = Infinity;
+    row.items.forEach((it, i) => {
+      const n = nodeFor(it.key);
+      if (!n) return;
+      const b = n.getBoundingClientRect();
+      const dist = Math.abs((b.left + b.right) / 2 - x);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = i;
+      }
+    });
+    return best;
   }
 
   function startEdit() {
     const item = focusedItem();
     if (!item || item.kind !== 'app') return;
-    state.panel = null;
-    state.zone = 'grid';
     state.editing = item.app.key;
     render();
   }
@@ -549,8 +528,28 @@
     render();
   }
 
+  function saveFavorites(list) {
+    state.favorites = list;
+    store.set('favorites', list);
+  }
+
   function moveEditing(dx, dy) {
-    const visible = visibleApps();
+    const app = appByKey(state.editing);
+    if (isFavorite(app)) {
+      // Favorites are one row: only sideways moves.
+      if (!dx) return;
+      const shownKeys = favoriteApps().map((a) => a.key);
+      const other = shownKeys[shownKeys.indexOf(app.key) + dx];
+      if (!other) return;
+      const list = state.favorites.slice();
+      list[list.indexOf(app.key)] = other;
+      list[state.favorites.indexOf(other)] = app.key;
+      saveFavorites(list);
+      render();
+      return;
+    }
+
+    const visible = gridApps();
     const from = visible.map((a) => a.key).indexOf(state.editing);
     let to = from + dx + dy * COLS;
     if (dx && Math.floor(to / COLS) !== Math.floor(from / COLS)) return;
@@ -569,6 +568,16 @@
     render();
   }
 
+  function toggleFavorite(key) {
+    const list = state.favorites.slice();
+    const i = list.indexOf(key);
+    if (i === -1) list.push(key);
+    else list.splice(i, 1);
+    saveFavorites(list);
+    render();
+    toast(i === -1 ? 'Added to Favorites' : 'Removed from Favorites');
+  }
+
   function toggleHidden(key) {
     const i = state.hidden.indexOf(key);
     if (i === -1) state.hidden.push(key);
@@ -577,9 +586,120 @@
     render();
   }
 
+  // ---------------------------------------------------------------- Plex and weather
+
+  function loadPlex() {
+    if (!plex) return;
+    [['continue', window.Plex.continueWatching], ['recent', window.Plex.recentlyAdded]].forEach((pair) => {
+      const row = state.plexRows[pair[0]];
+      pair[1](plex).then((items) => {
+        row.items = items;
+        row.error = null;
+        row.loaded = true;
+        store.set('cache.' + pair[0], items);
+        render();
+      }, (err) => {
+        row.error = err.message;
+        row.loaded = true;
+        render();
+      });
+    });
+  }
+
+  function renderWeather() {
+    const w = state.weather;
+    [$('weather'), $('saver-weather')].forEach((node) => {
+      node.textContent = '';
+      if (!w) return;
+      const icon = el('span', 'weather-icon');
+      icon.innerHTML = window.Weather.icon(w.icon);
+      node.appendChild(icon);
+      node.appendChild(el('span', 'weather-temp', w.temp + '°'));
+      const detail = el('span', 'weather-detail');
+      detail.appendChild(el('span', null, w.label));
+      detail.appendChild(el('span', null, 'H ' + w.high + '°  L ' + w.low + '°'));
+      node.appendChild(detail);
+    });
+  }
+
+  function loadWeather() {
+    if (!weatherCfg) return;
+    // On failure the last reading stays up until the next try.
+    window.Weather.current(weatherCfg).then((w) => {
+      state.weather = w;
+      renderWeather();
+    }, () => {});
+  }
+
+  // ---------------------------------------------------------------- screensaver
+
+  const saver = { on: false, idle: null, slides: null, next: 0, front: 0 };
+
+  function resetIdle() {
+    clearTimeout(saver.idle);
+    if (saverMinutes > 0) saver.idle = setTimeout(startSaver, saverMinutes * 60000);
+  }
+
+  function saverSlides() {
+    const out = [];
+    [['continue', 'Continue Watching'], ['recent', 'Recently Added']].forEach((pair) => {
+      state.plexRows[pair[0]].items.forEach((it) => {
+        if (it.backdrop) out.push({ src: it.backdrop, caption: pair[1] + ' · ' + it.title });
+      });
+    });
+    return out;
+  }
+
+  function showSlide() {
+    const slides = saverSlides();
+    if (!slides.length) return;
+    const slide = slides[saver.next++ % slides.length];
+    const img = new Image();
+    // Swap only once the picture has loaded, so the fade never shows a half-drawn image.
+    img.onload = () => {
+      if (!saver.on) return;
+      const layers = document.querySelectorAll('.saver-art');
+      saver.front = 1 - saver.front;
+      layers[saver.front].style.backgroundImage = 'url("' + slide.src + '")';
+      layers[saver.front].classList.add('show');
+      layers[1 - saver.front].classList.remove('show');
+      $('saver-caption').textContent = slide.caption;
+    };
+    img.src = slide.src;
+  }
+
+  // Nudges the clock a little each minute so nothing sits in one spot for hours.
+  function driftSaverInfo() {
+    $('saver-info').style.transform = 'translate(' + Math.round(Math.random() * 40 - 20) + 'px, ' + Math.round(Math.random() * 30 - 15) + 'px)';
+  }
+
+  function startSaver() {
+    if (document.hidden || state.editing) {
+      resetIdle();
+      return;
+    }
+    saver.on = true;
+    saver.next = Math.floor(Math.random() * Math.max(1, saverSlides().length));
+    $('saver').classList.add('show');
+    driftSaverInfo();
+    showSlide();
+    saver.slides = setInterval(() => {
+      showSlide();
+      driftSaverInfo();
+    }, SLIDE_MS);
+  }
+
+  function stopSaver() {
+    saver.on = false;
+    clearInterval(saver.slides);
+    $('saver').classList.remove('show');
+    Array.prototype.forEach.call(document.querySelectorAll('.saver-art'), (n) => n.classList.remove('show'));
+    resetIdle();
+  }
+
   // ---------------------------------------------------------------- input
 
-  const ok = { down: false, long: false, timer: null };
+  const ok = { down: false, long: false, timer: null, swallow: false };
 
   function onOkPress() {
     if (state.editing) finishEdit();
@@ -588,16 +708,25 @@
 
   function onOkHold() {
     const item = focusedItem();
-    if (!state.editing && state.zone === 'grid' && item && item.kind === 'app') startEdit();
+    if (!state.editing && item && item.kind === 'app') startEdit();
     else onOkPress();
   }
 
   document.addEventListener('keydown', (e) => {
     const k = e.keyCode;
+    resetIdle();
+    // Any button wakes the screensaver and does nothing else.
+    if (saver.on) {
+      e.preventDefault();
+      if (k === KEY.ENTER) ok.swallow = true;
+      stopSaver();
+      return;
+    }
+
     if (k === KEY.ENTER) {
       e.preventDefault();
       // Holding OK repeats keydown; only the first one counts.
-      if (!ok.down) {
+      if (!ok.down && !ok.swallow) {
         ok.down = true;
         ok.long = false;
         ok.timer = setTimeout(() => {
@@ -620,51 +749,48 @@
 
     if (state.editing) {
       if (dx || dy) moveEditing(dx, dy);
+      else if (k === KEY.GREEN || k === KEY.G) toggleFavorite(state.editing);
       else if (k === KEY.RED || k === KEY.R) toggleHidden(state.editing);
       else if (back || k === KEY.YELLOW || k === KEY.Y) finishEdit();
       return;
     }
 
-    if (state.zone === 'panel' && state.panel) {
-      if (dx) movePanel(dx);
-      else if (k === KEY.UP || back) {
-        state.zone = 'grid';
-        closePanel();
-      } else if (k === KEY.DOWN) {
-        state.zone = 'grid';
-        moveGrid(0, 1);
-      }
-      return;
-    }
-
-    if (dx || dy) moveGrid(dx, dy);
+    if (dx || dy) moveFocus(dx, dy);
     else if (k === KEY.YELLOW || k === KEY.Y) startEdit();
     else if ((k === KEY.GREEN || k === KEY.G) && (state.hidden.length || state.showHidden)) {
       state.showHidden = !state.showHidden;
       render();
-    } else if (back) {
-      // This is the home screen: Back closes what is open and otherwise stays put.
-      if (state.panel) closePanel();
-      else if (state.showHidden) {
-        state.showHidden = false;
-        render();
-      }
+    } else if (back && state.showHidden) {
+      // This is the home screen: Back only undoes "show hidden apps" and otherwise stays put.
+      state.showHidden = false;
+      render();
     }
   });
 
   document.addEventListener('keyup', (e) => {
     if (e.keyCode !== KEY.ENTER) return;
     clearTimeout(ok.timer);
-    if (ok.down && !ok.long) onOkPress();
+    if (ok.down && !ok.long && !ok.swallow) onOkPress();
     ok.down = false;
+    ok.swallow = false;
+  });
+
+  // The Magic Remote's pointer counts as activity too.
+  document.addEventListener('mousemove', () => {
+    if (saver.on) stopSaver();
+    else resetIdle();
   });
 
   // ---------------------------------------------------------------- clock
 
   function tick() {
     const now = new Date();
-    $('time').textContent = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    $('date').textContent = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+    const time = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const date = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+    $('time').textContent = time;
+    $('date').textContent = date;
+    $('saver-time').textContent = time;
+    $('saver-date').textContent = date;
   }
 
   // ---------------------------------------------------------------- start
@@ -675,7 +801,7 @@
     setInterval(tick, 10000);
 
     render();
-    if (!state.focus && current.rows.length) setFocus(current.rows[0][0].key, 'grid');
+    if (!state.focus && current.rows.length) setFocus(current.rows[0].items[0].key);
 
     // A rooted TV hands over the live list; a stock one refuses and the synced list stays.
     window.Luna.listLaunchPoints().then((res) => {
@@ -692,13 +818,22 @@
       render();
     }, () => {});
 
+    loadPlex();
+    loadWeather();
+    setInterval(loadPlex, PLEX_REFRESH_MS);
+    setInterval(loadWeather, WEATHER_REFRESH_MS);
+    resetIdle();
+
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) return;
-      tick();
-      if (state.panel) {
-        const provider = providerFor(state.panel.app);
-        if (provider) refreshPanel(provider, 'cache.' + state.panel.app.key);
+      if (document.hidden) {
+        if (saver.on) stopSaver();
+        clearTimeout(saver.idle);
+        return;
       }
+      tick();
+      loadPlex();
+      loadWeather();
+      resetIdle();
     });
   }
 
