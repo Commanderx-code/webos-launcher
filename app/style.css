@@ -155,7 +155,7 @@ body {
 
 /* Wallpaper: your own picture or video, darkened toward the bottom where the tiles sit. */
 .theme-photo #backdrop::after {
-  background: linear-gradient(to bottom, rgba(12, 13, 16, 0.25) 0%, rgba(12, 13, 16, 0.7) 45%, rgba(12, 13, 16, 0.88) 100%);
+  background: linear-gradient(to bottom, rgba(12, 13, 16, 0.1) 0%, rgba(12, 13, 16, 0.45) 45%, rgba(12, 13, 16, 0.7) 100%);
 }
 
 .theme-aurora .tile-label,
