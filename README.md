@@ -49,7 +49,9 @@ The sync step talks to the TV over LG's network API, the one phone remote apps u
 npm run plex-login
 ```
 
-This opens a Plex sign-in page in your browser. Once you approve it, the script picks your server, finds an address the TV can reach on your network, and saves the address and token in `config.json`. If you'd rather do it by hand, fill in `plex.server` (e.g. `http://192.168.1.10:32400`) and `plex.token` yourself.
+This opens a Plex sign-in page in your browser. Once you approve it, the script picks your server, finds an address the TV can reach on your network, and saves the address and token in `config.json`. If you'd rather do it by hand, fill in `plex.server` and `plex.token` yourself.
+
+The script prefers your server's encrypted `plex.direct` address. If the Plex row on the TV says it can't reach the server, the TV's older browser may not accept that certificate. In that case set `plex.server` to the plain address (e.g. `http://192.168.1.10:32400`) and rerun `npm run sync`. The token then crosses your home network unencrypted.
 
 ### 4. Read your apps and install
 

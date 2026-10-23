@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -12,8 +12,15 @@ export function readConfig() {
   return JSON.parse(readFileSync(CONFIG, 'utf8'));
 }
 
+// For files holding the Plex token: the mode option only applies when the file is created,
+// so tighten one that already existed too.
+export function writePrivate(file, text) {
+  writeFileSync(file, text, { mode: 0o600 });
+  chmodSync(file, 0o600);
+}
+
 export function writeConfig(config) {
-  writeFileSync(CONFIG, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
+  writePrivate(CONFIG, JSON.stringify(config, null, 2) + '\n');
 }
 
 export function readAppInfo() {
