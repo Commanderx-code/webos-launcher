@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Launcher</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="clock">
+        <div class="clock-time" id="time"></div>
+        <div class="clock-date" id="date"></div>
+      </div>
+    </header>
+    <main id="scroller"></main>
+    <footer class="hints" id="hints"></footer>
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <!-- Written by `npm run sync`; the launcher still starts without it. -->
+  <script src="data/data.js"></script>
+  <script src="luna.js"></script>
+  <script src="plex.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>

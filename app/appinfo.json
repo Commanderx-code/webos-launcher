@@ -1,0 +1,13 @@
+{
+  "id": "com.minimal.launcher",
+  "version": "1.0.0",
+  "vendor": "Minimal Launcher",
+  "type": "web",
+  "main": "index.html",
+  "title": "Launcher",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "bgColor": "#0c0d10",
+  "resolution": "1920x1080",
+  "disableBackHistoryAPI": true
+}
