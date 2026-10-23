@@ -68,9 +68,12 @@ lgtv.on('connect', async () => {
     rmSync(ICON_DIR, { recursive: true, force: true });
     mkdirSync(ICON_DIR, { recursive: true });
 
+    // Apps left out of the launcher altogether, by ID or title.
+    const exclude = new Set((config.exclude || []).map((e) => e.toLowerCase()));
     const apps = [];
     for (const lp of launchPoints) {
       if (lp.id === selfId || /^com\.webos\.app\.hdmi/.test(lp.id)) continue;
+      if (exclude.has(lp.id.toLowerCase()) || exclude.has(String(lp.title).toLowerCase())) continue;
       const key = lp.launchPointId || lp.id;
       apps.push({
         key,

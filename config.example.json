@@ -4,6 +4,7 @@
     "device": "tv"
   },
   "wallpaper": "",
+  "exclude": [],
   "plex": {
     "server": "http://192.168.1.10:32400",
     "token": ""
