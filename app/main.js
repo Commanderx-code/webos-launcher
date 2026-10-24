@@ -39,6 +39,12 @@
   if (wallpaper) THEMES.push({ id: 'photo', name: 'Wallpaper' });
   const AMBIENT_FALLBACK = 'hsl(222, 30%, 24%)';
 
+  // Order, hidden apps, Favorites and theme are kept in localStorage. A fresh install (nothing
+  // stored) starts from the last backup instead: the one on the TV, else the one packaged.
+  const LAYOUT_KEYS = ['order', 'hidden', 'favorites', 'theme'];
+  const LAYOUT_FILE = '/home/root/.config/minimal-launcher/layout.json';
+  const packagedLayout = window.LAUNCHER_LAYOUT || {};
+
   const store = {
     get(key, fallback) {
       try {
@@ -58,14 +64,14 @@
   };
 
   const state = {
-    order: store.get('order', []),
-    hidden: store.get('hidden', []),
-    favorites: store.get('favorites', data.favorites || []),
+    order: store.get('order', packagedLayout.order || []),
+    hidden: store.get('hidden', packagedLayout.hidden || []),
+    favorites: store.get('favorites', packagedLayout.favorites || data.favorites || []),
     showHidden: false,
     editing: null,   // app key, or "input:<id>" for an input, of the tile being edited
     focus: null,     // key of the focused item, e.g. "app:netflix" or "continue:2"
     // config.json can set the starting theme; the blue button's choice wins after that.
-    theme: store.get('theme', data.theme || THEMES[0].id),
+    theme: store.get('theme', packagedLayout.theme || data.theme || THEMES[0].id),
     rowIndex: {},    // where focus last was in each scrolling row, to land there again
     weather: null,
     plexRows: {
@@ -418,7 +424,7 @@
     const i = THEMES.map((t) => t.id).indexOf(state.theme);
     const next = THEMES[(i + 1) % THEMES.length];
     state.theme = next.id;
-    store.set('theme', next.id);
+    saveLayout('theme', next.id);
     applyTheme();
     toast('Theme: ' + next.name);
   }
@@ -505,15 +511,40 @@
     window.Luna.launch(id, params).catch((err) => toast("Couldn't open " + title + ': ' + err.message));
   }
 
+  // PlxNative opens a given title when launched with {"plex": {...}} (its docs/launch-links.md).
+  // Before webOS 7.4 it only reads that on a cold start, so close it first.
+  const PLXNATIVE = 'com.beb.plxnative';
+
+  function openInPlex(item, row) {
+    const app = plexApp();
+    const title = app ? app.title : 'Plex';
+    if (plex.appId !== PLXNATIVE || !item.ratingKey) {
+      launch(plex.appId, app ? app.params : null, title);
+      return;
+    }
+    const params = { plex: { ratingKey: String(item.ratingKey), action: row === 'continue' ? 'play' : 'open' } };
+    if (plex.machineId) params.plex.server = plex.machineId;
+    if (!window.Luna.available()) {
+      toast(title + ' opens ' + item.title + ' here on the TV');
+      return;
+    }
+    toast('Opening ' + item.title + '…');
+    const closed = window.Luna.close(PLXNATIVE).catch(() => {
+      if (!data.rooted) return null;
+      return window.Luna.exec('script -q -c "luna-send -n 1 luna://com.webos.applicationManager/closeByAppId \'{\\"id\\":\\"' + PLXNATIVE + '\\"}\'" /dev/null < /dev/null').catch(() => null);
+    });
+    closed.then(() => new Promise((resolve) => setTimeout(resolve, 700)))
+      .then(() => window.Luna.launch(PLXNATIVE, params))
+      .catch((err) => toast("Couldn't open " + title + ': ' + err.message));
+  }
+
   function activate() {
     const item = focusedItem();
     if (!item) return;
     if (item.kind === 'input') {
       launch(item.input.appId, null, item.input.title);
     } else if (item.kind === 'plex') {
-      // The app can't be told which item to play, so every card just opens it.
-      const app = plexApp();
-      launch(plex.appId, app ? app.params : null, app ? app.title : 'Plex');
+      openInPlex(item.item, item.key.split(':')[0]);
     } else {
       launch(item.app.id, item.app.params, item.app.title);
     }
@@ -571,7 +602,7 @@
 
   function saveFavorites(list) {
     state.favorites = list;
-    store.set('favorites', list);
+    saveLayout('favorites', list);
   }
 
   function moveEditing(dx, dy) {
@@ -607,7 +638,7 @@
     order.splice(at, 0, state.editing);
 
     state.order = order;
-    store.set('order', order);
+    saveLayout('order', order);
     render();
   }
 
@@ -626,7 +657,7 @@
     const i = state.hidden.indexOf(key);
     if (i === -1) state.hidden.push(key);
     else state.hidden.splice(i, 1);
-    store.set('hidden', state.hidden);
+    saveLayout('hidden', state.hidden);
     render();
   }
 
@@ -922,6 +953,53 @@
     $('saver-date').textContent = date;
   }
 
+  // ---------------------------------------------------------------- layout backup
+
+  function layoutNow() {
+    return { order: state.order, hidden: state.hidden, favorites: state.favorites, theme: state.theme };
+  }
+
+  let backupTimer = null;
+  function saveLayout(key, value) {
+    store.set(key, value);
+    clearTimeout(backupTimer);
+    backupTimer = setTimeout(backupLayout, 2000);
+  }
+
+  // Copies the layout to a file on the TV, outside the app, so a reinstall can't lose it.
+  // The hourly sync on the computer keeps a copy of that file too.
+  function backupLayout() {
+    if (!data.rooted || !window.Luna.available()) return;
+    const json = JSON.stringify(Object.assign(layoutNow(), { savedAt: new Date().toISOString() }));
+    const b64 = btoa(unescape(encodeURIComponent(json)));
+    window.Luna.exec('mkdir -p ' + LAYOUT_FILE.replace(/\/[^/]*$/, '') + " && echo '" + b64 + "' | base64 -d > " +
+      LAYOUT_FILE + '.tmp && mv ' + LAYOUT_FILE + '.tmp ' + LAYOUT_FILE).catch(() => {});
+  }
+
+  // With nothing stored yet (a fresh install), take the layout from the TV's backup file if
+  // it's newer than the packaged one. Otherwise back up what's here.
+  function restoreLayout() {
+    const fresh = LAYOUT_KEYS.every((k) => store.get(k, null) === null);
+    if (!data.rooted || !window.Luna.available()) return;
+    if (!fresh) {
+      backupLayout();
+      return;
+    }
+    window.Luna.exec('cat ' + LAYOUT_FILE).then((res) => {
+      const saved = JSON.parse(res.stdoutString);
+      if (packagedLayout.savedAt && saved.savedAt && saved.savedAt < packagedLayout.savedAt) return;
+      LAYOUT_KEYS.forEach((k) => {
+        if (saved[k] == null) return;
+        state[k] = saved[k];
+        store.set(k, saved[k]);
+      });
+      applyTheme();
+      render();
+    }).catch(() => {
+      backupLayout();
+    });
+  }
+
   // ---------------------------------------------------------------- start
 
   function start() {
@@ -932,20 +1010,25 @@
     render();
     if (!state.focus && current.rows.length) setFocus(current.rows[0].items[0].key);
 
-    // A rooted TV hands over the live list; a stock one refuses and the synced list stays.
+    // If the TV hands over the live app list, use it to drop uninstalled apps and add new ones.
+    // Synced apps keep their entries, with the names, icons and colors config.json gave them.
     window.Luna.listLaunchPoints().then((res) => {
-      const live = (res.launchPoints || []).filter((lp) => lp.id !== SELF_ID && !/^com\.webos\.app\.hdmi/.test(lp.id));
+      const exclude = (data.exclude || []).map((e) => e.toLowerCase());
+      const live = (res.launchPoints || []).filter((lp) => lp.id !== SELF_ID && !/^com\.webos\.app\.hdmi/.test(lp.id) &&
+        exclude.indexOf(String(lp.id).toLowerCase()) === -1 && exclude.indexOf(String(lp.title).toLowerCase()) === -1);
       if (!live.length) return;
-      apps = live.map((lp) => ({
+      const synced = new Map(apps.map((a) => [a.key, a]));
+      apps = live.map((lp) => synced.get(lp.launchPointId || lp.id) || {
         key: lp.launchPointId || lp.id,
         id: lp.id,
         title: lp.title,
         icon: lp.largeIcon || lp.icon,
         bgColor: lp.iconColor || lp.bgColor,
         params: lp.params,
-      }));
+      });
       render();
     }, () => {});
+    restoreLayout();
 
     loadPlex();
     loadWeather();

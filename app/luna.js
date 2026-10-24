@@ -54,5 +54,14 @@ window.Luna = (function () {
     return call('luna://com.webos.applicationManager/listLaunchPoints', {});
   }
 
-  return { available: available, call: call, launch: launch, listLaunchPoints: listLaunchPoints };
+  function close(id) {
+    return call('luna://com.webos.applicationManager/closeByAppId', { id: id });
+  }
+
+  // A root shell command through the Homebrew Channel's service; rooted TVs only.
+  function exec(command) {
+    return call('luna://org.webosbrew.hbchannel.service/exec', { command: command });
+  }
+
+  return { available: available, call: call, launch: launch, close: close, exec: exec, listLaunchPoints: listLaunchPoints };
 })();

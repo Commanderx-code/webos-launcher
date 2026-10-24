@@ -51,6 +51,12 @@ export function installIpk(file, config = readConfig()) {
   });
 }
 
+// Reads a file on the TV; null if it isn't there or the TV can't be reached.
+export function readRemote(file, config = readConfig()) {
+  const res = spawnSync('ssh', [...sshOptions(), target(config), `cat '${file}'`], { encoding: 'utf8', timeout: 20000 });
+  return res.status === 0 ? res.stdout : null;
+}
+
 export function launchApp(id, config = readConfig()) {
   const res = spawnSync('ssh', ['-tt', ...sshOptions(), target(config),
     `luna-send -n 1 'luna://com.webos.applicationManager/launch' '${JSON.stringify({ id })}'`], { encoding: 'utf8' });
