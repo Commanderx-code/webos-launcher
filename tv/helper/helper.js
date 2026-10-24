@@ -195,12 +195,15 @@ const PAGE = fs.readFileSync(path.join(__dirname, 'page.html'));
 
 http.createServer((req, res) => {
   const url = new URL(req.url, 'http://tv');
-  // Opening the private link once saves the key in a cookie for this phone.
+  // Opening the private link once saves the key in a cookie for this phone. SameSite=Lax, not
+  // Strict: a link tapped in another app is a cross-site navigation, and a Strict cookie isn't
+  // sent on the redirect that follows it. Lax still keeps it off other sites' requests, and
+  // /api/act also needs a JSON body, which another site can't send without asking.
   if (url.searchParams.has('k')) {
     if (!sameKey(url.searchParams.get('k'))) return send(res, 403, 'text/plain', 'Wrong link.');
     return send(res, 302, 'text/plain', '', {
       Location: '/',
-      'Set-Cookie': 'k=' + KEY + '; Max-Age=31536000; Path=/; HttpOnly; SameSite=Strict',
+      'Set-Cookie': 'k=' + KEY + '; Max-Age=31536000; Path=/; HttpOnly; SameSite=Lax',
     });
   }
   if (!sameKey(cookieKey(req))) return send(res, 403, 'text/plain', 'Open the private link from the launcher setup on this phone first.');
