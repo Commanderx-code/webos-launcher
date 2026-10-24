@@ -108,6 +108,9 @@ The updater picks up changes here, and files added to the screensaver folder, wi
 
 ## Automatic updates
 
+On a rooted TV the hourly run also updates the apps installed from the Homebrew Channel's official repository (`tools/app-updates.mjs`, or `npm run update-apps` by hand): each newer version is downloaded, checked against the repository's SHA-256, and installed over root SSH. An app that's on screen waits for the next run; the Homebrew Channel and its Updater update themselves. The launcher itself also reloads once a night, between 3 and 5 AM, while it's in the background or showing the screensaver.
+
+
 `tools/auto-update.mjs` runs every hour from a systemd user timer. If the TV is on, it syncs. If anything changed since the last install (apps installed or removed, settings, or the launcher's own code), it reinstalls the launcher without opening it. When the launcher is on screen it waits for the next run, because reinstalling closes it.
 
 ```ini
@@ -159,6 +162,7 @@ npm run install-ipk -- some-app.ipk                # any other webOS package
 
 - `20-close-devtools-port`: closes the debug port (below).
 - `40-launcher-helper`: starts `tv/helper/helper.js` (Node, root), which records which apps are on screen for the Recently Used row (`/home/root/.config/minimal-launcher/recent.json`) and serves the phone remote (below).
+- `50-watchdog`: every 5 minutes, starts the power-on watcher and the helper again if either has stopped. Its log is `/run/minimal-launcher/watchdog.log`.
 - `30-launcher-on-wake`: opens the launcher when the TV is turned on with the remote (the TV reports why it turned on: `getPowerOnReason` says `remoteKey`), and for 20 seconds takes the screen back if a device woken with the TV grabs it over HDMI-CEC. When something else turned the TV on, such as a console over HDMI-CEC, it stays where that put it. Its log is `/run/minimal-launcher/launcher-on-wake.log`; `30-launcher-on-wake states` prints power states as they change.
 
 ### Commercial mute
@@ -170,6 +174,8 @@ npm run install-ipk -- some-app.ipk                # any other webOS package
 Pressing Left on the first tile of any row slides out a menu (Up/Down to move, OK or Right to choose, Back or Left to go back):
 
 - **Inputs**: switch straight to one.
+- **Picture & sound** (rooted TVs): the picture mode and sound mode of the apps and of each input (LG keeps one of each per input), from the modes the TV offers.
+- **Sleep timer** (rooted TVs): 30, 60, 90 or 120 minutes, with a TV notification a minute before. The helper on the TV runs it, so it works whatever app is on screen.
 - **Launcher settings**: theme, when the screensaver starts, 12- or 24-hour clock, °F or °C, showing hidden apps. Saved with the layout backup.
 - **HDMI settings** (rooted TVs): per input, Deep Color (needed for 4K HDR at full quality) and PC mode; and SIMPLINK (HDMI-CEC) and Auto Power Sync for the whole TV. These are the TV's own settings, read and changed through `com.webos.settingsservice` as root.
 - **System**: LG's settings app; turning the TV off and rebooting it, each after a second OK.

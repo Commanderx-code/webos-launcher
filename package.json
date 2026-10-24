@@ -13,7 +13,8 @@
     "extend-devmode": "node tools/extend-devmode.mjs",
     "root-ssh": "node tools/root-ssh.mjs",
     "install-ipk": "node tools/install-ipk.mjs",
-    "tv-setup": "node tools/tv-setup.mjs"
+    "tv-setup": "node tools/tv-setup.mjs",
+    "update-apps": "node tools/app-updates.mjs"
   },
   "devDependencies": {
     "@webos-tools/cli": "^3.2.6",

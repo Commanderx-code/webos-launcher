@@ -1,6 +1,7 @@
 // The launcher's helper on the TV (Node 8, run as root by tv/init.d/40-launcher-helper):
 //  - remembers which apps were on screen, for the launcher's Recently Used row
 //  - serves a remote control page for phones on the home network, behind a private link key
+//  - runs the sleep timer the launcher's menu sets, whatever app is on screen
 'use strict';
 
 const crypto = require('crypto');
@@ -86,6 +87,36 @@ const remote = new Remote({
 
 function launch(id) {
   return remote.request('ssap://system.launcher/launch', { id: id });
+}
+
+// ---------------------------------------------------------------- sleep timer
+
+// The launcher's menu writes {"at": <ms since 1970>} here; deleting the file cancels.
+const SLEEP_FILE = '/run/minimal-launcher/sleep.json';
+// A deadline missed by more than this was missed while the TV slept: drop it rather than turn
+// the TV off the moment it wakes.
+const SLEEP_STALE_MS = 2 * 60 * 1000;
+let sleepWarned = 0;
+
+// luna-send only answers with a terminal attached; script(1) gives it one. Messages are ours,
+// with no quotes in them.
+function lunaSend(uri, payload) {
+  execFile('script', ['-q', '-c', 'luna-send -n 1 ' + uri + " '" + JSON.stringify(payload) + "'", '/dev/null'], () => {});
+}
+
+function checkSleep() {
+  const timer = readJSON(SLEEP_FILE, null);
+  if (!timer || !timer.at) return;
+  const left = timer.at - Date.now();
+  if (left <= 0) {
+    fs.unlink(SLEEP_FILE, () => {});
+    if (left < -SLEEP_STALE_MS) return log('dropped a sleep timer that ran out while the TV was off');
+    log('sleep timer: turning the TV off');
+    remote.request('ssap://system/turnOff').catch((err) => log('sleep timer: ' + err.message));
+  } else if (left <= 60000 && sleepWarned !== timer.at) {
+    sleepWarned = timer.at;
+    lunaSend('luna://com.webos.notification/createToast', { sourceId: 'com.minimal.launcher', message: 'Sleep timer: the TV turns off in 1 minute.' });
+  }
 }
 
 // ---------------------------------------------------------------- what the page shows
@@ -227,3 +258,4 @@ http.createServer((req, res) => {
 
 track();
 log('tracking apps on screen');
+setInterval(checkSleep, 15000);

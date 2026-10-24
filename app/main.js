@@ -996,6 +996,8 @@
     gear: '<circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>',
     hdmi: '<path d="M2 8h20v5l-3 4H5l-3-4z"/><path d="M7 12h10"/>',
     power: '<path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>',
+    moon: '<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/>',
+    picture: '<path d="M3 5h18v12H3z"/><path d="M3 14l5-4 4 3 3-2 6 4"/>',
   };
 
   function sbIcon(name) {
@@ -1059,6 +1061,9 @@
       { label: 'Launcher settings', icon: 'gear', menu: settingsMenu },
     ];
     if (data.rooted) {
+      items.splice(2, 0,
+        { label: 'Picture & sound', icon: 'picture', menu: avMenu },
+        { label: 'Sleep timer', icon: 'moon', value: sleepLabel(), run: cycleSleep });
       items.push({ label: 'HDMI settings', icon: 'hdmi', menu: hdmiMenu });
       items.push({ label: 'System', icon: 'power', menu: systemMenu });
     } else {
@@ -1172,6 +1177,121 @@
     };
   }
 
+  // ----- sleep timer: the TV-side helper turns the TV off when the time comes (tv/helper).
+
+  const SLEEP_FILE = '/run/minimal-launcher/sleep.json';
+  const SLEEP_STEPS = [30, 60, 90, 120];
+
+  function loadSleep() {
+    window.Luna.exec('cat ' + SLEEP_FILE).then((res) => {
+      const at = JSON.parse(res.stdoutString).at;
+      sidebar.sleepAt = at > Date.now() ? at : null;
+      renderSidebar();
+    }, () => {
+      sidebar.sleepAt = null;
+      renderSidebar();
+    });
+  }
+
+  function sleepLeft() {
+    return sidebar.sleepAt ? Math.max(1, Math.ceil((sidebar.sleepAt - Date.now()) / 60000)) : 0;
+  }
+
+  function sleepLabel() {
+    return sleepLeft() ? sleepLeft() + ' min left' : 'Off';
+  }
+
+  // Each OK picks the next step up from the time left, then Off after the longest.
+  function cycleSleep() {
+    const left = sleepLeft();
+    const next = SLEEP_STEPS.filter((m) => m > left + 1)[0] || 0;
+    sidebar.sleepAt = next ? Date.now() + next * 60000 : null;
+    const command = next
+      ? 'mkdir -p /run/minimal-launcher && chmod 700 /run/minimal-launcher && echo \'{"at":' + sidebar.sleepAt + '}\' > ' + SLEEP_FILE
+      : 'rm -f ' + SLEEP_FILE;
+    window.Luna.exec(command).then(() => toast(next ? 'The TV turns off in ' + next + ' minutes' : 'Sleep timer off'),
+      () => toast("Couldn't set the sleep timer"));
+  }
+
+  // ----- picture and sound modes, per input: LG keeps one of each for every input, and one
+  // for the apps.
+
+  const MODE_NAMES = {
+    vivid: 'Vivid', normal: 'Standard', eco: 'Eco', cinema: 'Cinema', sports: 'Sports', game: 'Game',
+    hdrEffect: 'HDR Effect', filmMaker: 'Filmmaker', expert1: 'Expert (bright room)', expert2: 'Expert (dark room)',
+    aiSoundPlus: 'AI Sound Pro', aiSound: 'AI Sound', standard: 'Standard', movie: 'Cinema', news: 'Clear Voice', music: 'Music',
+  };
+  const AV_KEYS = { picture: 'pictureMode', sound: 'soundMode' };
+
+  function modeName(v) {
+    return MODE_NAMES[v] || v || '';
+  }
+
+  function avTargets() {
+    return [{ id: 'default', label: 'Apps & launcher' }].concat(inputs.filter((i) => portOf(i)).map((i) => ({ id: 'hdmi' + portOf(i), label: i.title })));
+  }
+
+  function avDimension(kind, target) {
+    return kind === 'picture' ? { input: target, _3dStatus: '2d', dynamicRange: 'sdr' } : { input: target };
+  }
+
+  function loadAv() {
+    sidebar.av = { modes: {}, values: {} };
+    const reads = [];
+    ['picture', 'sound'].forEach((kind) => {
+      reads.push(rootLuna('luna://com.webos.settingsservice/getSystemSettingValues', { category: kind, key: AV_KEYS[kind] })
+        .then((r) => { sidebar.av.values[kind] = r.values.arrayExt.filter((v) => v.visible).map((v) => v.value); }));
+      avTargets().forEach((t) => {
+        reads.push(rootLuna('luna://com.webos.settingsservice/getSystemSettings', { category: kind, keys: [AV_KEYS[kind]], dimension: avDimension(kind, t.id) })
+          .then((r) => { sidebar.av.modes[kind + ':' + t.id] = r.settings[AV_KEYS[kind]]; }));
+      });
+    });
+    Promise.all(reads).then(() => { sidebar.av.ready = true; renderSidebar(); }, (err) => { sidebar.av.error = err.message; renderSidebar(); });
+  }
+
+  function avMenu() {
+    if (!sidebar.av) loadAv();
+    if (!sidebar.av.ready) {
+      const label = sidebar.av.error ? "Couldn't read them: " + sidebar.av.error : 'Reading the TV\'s settings…';
+      return { title: 'Picture & sound', items: [{ label: label, disabled: true }] };
+    }
+    return {
+      title: 'Picture & sound',
+      items: avTargets().map((t) => ({
+        label: t.label,
+        value: modeName(sidebar.av.modes['picture:' + t.id]),
+        menu: () => ({
+          title: t.label,
+          items: ['picture', 'sound'].map((kind) => ({
+            label: kind === 'picture' ? 'Picture mode' : 'Sound mode',
+            value: modeName(sidebar.av.modes[kind + ':' + t.id]),
+            menu: () => modeMenu(kind, t),
+          })),
+        }),
+      })),
+    };
+  }
+
+  function modeMenu(kind, target) {
+    const key = kind + ':' + target.id;
+    return {
+      title: target.label + ' · ' + (kind === 'picture' ? 'picture' : 'sound'),
+      items: (sidebar.av.values[kind] || []).map((v) => ({
+        label: modeName(v),
+        value: sidebar.av.modes[key] === v ? '✓' : '',
+        run: () => {
+          const settings = {};
+          settings[AV_KEYS[kind]] = v;
+          rootLuna('luna://com.webos.settingsservice/setSystemSettings', { category: kind, settings: settings, dimension: avDimension(kind, target.id) })
+            .then(() => {
+              sidebar.av.modes[key] = v;
+              sidebarBack();
+            }, (err) => toast("Couldn't change that: " + err.message));
+        },
+      })),
+    };
+  }
+
   function currentMenu() {
     return sidebar.stack[sidebar.stack.length - 1].menu();
   }
@@ -1210,6 +1330,9 @@
     sidebar.stack = [{ menu: rootMenu, from: 0 }];
     sidebar.index = 0;
     sidebar.hdmi = null;
+    sidebar.av = null;
+    sidebar.sleepAt = null;
+    if (data.rooted && window.Luna.available()) loadSleep();
     $('sidebar').classList.add('open');
     $('sidebar').setAttribute('aria-hidden', 'false');
     $('app').classList.add('sb-open');
@@ -1266,14 +1389,15 @@
       if (menu.items[sidebar.index] && menu.items[sidebar.index].menu) sidebarSelect();
       else if (sidebar.stack.length === 1) closeSidebar();
     } else if (back || k === KEY.LEFT) {
-      if (sidebar.stack.length > 1) {
-        sidebar.index = sidebar.stack.pop().from;
-        sidebar.armed = null;
-        renderSidebar();
-      } else if (back) {
-        closeSidebar();
-      }
+      if (sidebar.stack.length > 1) sidebarBack();
+      else if (back) closeSidebar();
     }
+  }
+
+  function sidebarBack() {
+    sidebar.index = sidebar.stack.pop().from;
+    sidebar.armed = null;
+    renderSidebar();
   }
 
   // ---------------------------------------------------------------- clock
@@ -1416,6 +1540,17 @@
     setInterval(loadPlex, PLEX_REFRESH_MS);
     setInterval(loadWeather, WEATHER_REFRESH_MS);
     resetIdle();
+
+    // Reload once a night, between 3 and 5 AM, while the launcher is out of sight or
+    // showing the screensaver, so weeks of running don't build up.
+    setInterval(() => {
+      const now = new Date();
+      const today = now.toDateString();
+      if (now.getHours() < 3 || now.getHours() >= 5 || store.get('reloadedOn', '') === today) return;
+      if (!document.hidden && !saver.on) return;
+      store.set('reloadedOn', today);
+      location.reload();
+    }, 10 * 60 * 1000);
 
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {

@@ -57,6 +57,13 @@ export function readRemote(file, config = readConfig()) {
   return res.status === 0 ? res.stdout : null;
 }
 
+// Runs a Node script on the TV (its Node 8) and returns what it printed.
+export function runRemoteNode(script, config = readConfig()) {
+  const res = spawnSync('ssh', [...sshOptions(), target(config), 'node -'], { input: script, encoding: 'utf8', timeout: 30000 });
+  if (res.status !== 0) throw new Error(`the TV couldn't run it: ${(res.stderr || '').trim()}`);
+  return res.stdout;
+}
+
 // Writes a file on the TV, replacing it in one step.
 export function writeRemote(file, text, config = readConfig()) {
   const res = spawnSync('ssh', [...sshOptions(), target(config), `cat > '${file}.tmp' && mv '${file}.tmp' '${file}'`],
