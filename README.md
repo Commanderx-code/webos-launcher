@@ -34,6 +34,7 @@ There's no build step. The app is plain HTML, CSS and JavaScript in `app/`, writ
 | Red | | Hide or unhide |
 | Blue | Next theme | |
 | Back | Leave out hidden apps again | Done |
+| Left on a row's first tile | Open the menu | |
 
 Any button wakes the screensaver without doing anything else. The order, Favorites, hidden apps and theme are saved on the TV. The Magic Remote pointer also works: hover to focus, click to open.
 
@@ -163,6 +164,15 @@ npm run install-ipk -- some-app.ipk                # any other webOS package
 ### Commercial mute
 
 `tv/bin/commercial-mute` toggles the TV's mute: muting starts a 2½-minute timer that unmutes it again, and a press while muted unmutes at once. It uses `com.webos.service.audio/master/muteVolume`, the mute the remote's button toggles (`com.webos.audio` has a separate one). Input Hook swallows a key it runs a command for, and kills what the command leaves behind, so the timer runs detached with `setsid`. `tv/lginputhook/keybinds.json` puts it on the remote's Mute button (code 113), next to Home → launcher (773) and 1 → LG's home bar (2). `npm run tv-setup` installs both. To change the length, edit the `150` in the keybinds file.
+
+### Menu
+
+Pressing Left on the first tile of any row slides out a menu (Up/Down to move, OK or Right to choose, Back or Left to go back):
+
+- **Inputs**: switch straight to one.
+- **Launcher settings**: theme, when the screensaver starts, 12- or 24-hour clock, °F or °C, showing hidden apps. Saved with the layout backup.
+- **HDMI settings** (rooted TVs): per input, Deep Color (needed for 4K HDR at full quality) and PC mode; and SIMPLINK (HDMI-CEC) and Auto Power Sync for the whole TV. These are the TV's own settings, read and changed through `com.webos.settingsservice` as root.
+- **System**: LG's settings app; turning the TV off and rebooting it, each after a second OK.
 
 ### Phone remote
 

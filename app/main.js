@@ -28,8 +28,13 @@
   const plex = data.plex && data.plex.server && data.plex.token ? data.plex : null;
   const weatherCfg = data.weather && data.weather.latitude != null ? data.weather : null;
   const wallpaper = typeof data.wallpaper === 'string' ? { src: data.wallpaper, video: false } : data.wallpaper;
-  // Minutes without a button press before the screensaver starts; 0 turns it off.
-  const saverMinutes = data.screensaverMinutes == null ? 5 : data.screensaverMinutes;
+  // Minutes without a button press before the screensaver starts; 0 turns it off. The sidebar's
+  // setting wins over config.json's.
+  function saverMinutes() {
+    const set = state.settings.screensaverMinutes;
+    if (set != null) return set;
+    return data.screensaverMinutes == null ? 5 : data.screensaverMinutes;
+  }
 
   const THEMES = [
     { id: 'ambient', name: 'Ambient' },
@@ -41,7 +46,7 @@
 
   // Order, hidden apps, Favorites and theme are kept in localStorage. A fresh install (nothing
   // stored) starts from the last backup instead: the one on the TV, else the one packaged.
-  const LAYOUT_KEYS = ['order', 'hidden', 'favorites', 'theme'];
+  const LAYOUT_KEYS = ['order', 'hidden', 'favorites', 'theme', 'settings'];
   const LAYOUT_FILE = '/home/root/.config/minimal-launcher/layout.json';
   const packagedLayout = window.LAUNCHER_LAYOUT || {};
 
@@ -67,7 +72,9 @@
     order: store.get('order', packagedLayout.order || []),
     hidden: store.get('hidden', packagedLayout.hidden || []),
     favorites: store.get('favorites', packagedLayout.favorites || data.favorites || []),
-    used: store.get('used', []),   // app IDs last on screen, newest first (from the TV helper)
+    used: store.get('used', []),
+    // Choices made in the sidebar: screensaverMinutes, clock24, units.
+    settings: store.get('settings', packagedLayout.settings || {}),   // app IDs last on screen, newest first (from the TV helper)
     showHidden: false,
     editing: null,   // app key, or "input:<id>" for an input, of the tile being edited
     focus: null,     // key of the focused item, e.g. "app:netflix" or "continue:2"
@@ -481,6 +488,7 @@
     const bar = $('hints');
     bar.textContent = '';
     const add = (k, t, l) => bar.appendChild(hint(k, t, l));
+    if (sidebar.open) return;
 
     if (state.editing) {
       const app = appByKey(state.editing);
@@ -579,6 +587,7 @@
     if (dx) {
       const c = pos.c + dx;
       if (c >= 0 && c < row.items.length) setFocus(row.items[c].key);
+      else if (c < 0) openSidebar();
       return;
     }
     const r = pos.r + dy;
@@ -720,7 +729,8 @@
   function loadWeather() {
     if (!weatherCfg) return;
     // On failure the last reading stays up until the next try.
-    window.Weather.current(weatherCfg).then((w) => {
+    const cfg = Object.assign({}, weatherCfg, state.settings.units ? { units: state.settings.units } : {});
+    window.Weather.current(cfg).then((w) => {
       state.weather = w;
       renderWeather();
     }, () => {});
@@ -733,7 +743,7 @@
 
   function resetIdle() {
     clearTimeout(saver.idle);
-    if (saverMinutes > 0) saver.idle = setTimeout(startSaver, saverMinutes * 60000);
+    if (saverMinutes() > 0) saver.idle = setTimeout(startSaver, saverMinutes() * 60000);
   }
 
   function saverSlides() {
@@ -903,6 +913,18 @@
       return;
     }
 
+    if (sidebar.open) {
+      e.preventDefault();
+      // OK acts on the first keydown; the swallow keeps its keyup from reaching the grid.
+      if (k === KEY.ENTER) {
+        if (ok.down) return;
+        ok.down = true;
+        ok.swallow = true;
+      }
+      sidebarKey(k);
+      return;
+    }
+
     if (k === KEY.ENTER) {
       e.preventDefault();
       // Holding OK repeats keydown; only the first one counts.
@@ -961,11 +983,304 @@
     else resetIdle();
   });
 
+  // ---------------------------------------------------------------- sidebar
+
+  // A Roku-style menu that slides out from the left: inputs, launcher settings, the TV's HDMI
+  // settings and system actions. Menus are functions, so values are current on every render.
+  // stack holds the menus walked into, with the item each was opened from, to land back on it.
+  const sidebar = { open: false, stack: [], index: 0, armed: null, armedTimer: null, hdmi: null };
+
+  const SB_ICONS = {
+    home: '<path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/>',
+    input: '<path d="M3 6h18v12H3z"/><path d="M8 21h8"/>',
+    gear: '<circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>',
+    hdmi: '<path d="M2 8h20v5l-3 4H5l-3-4z"/><path d="M7 12h10"/>',
+    power: '<path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>',
+  };
+
+  function sbIcon(name) {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + SB_ICONS[name] + '</svg>';
+  }
+
+  function saveSetting(key, value) {
+    const next = Object.assign({}, state.settings);
+    next[key] = value;
+    state.settings = next;
+    saveLayout('settings', next);
+  }
+
+  // A system call as root through the Homebrew Channel. The payload goes over base64, so no
+  // shell quoting can break it.
+  function rootLuna(uri, payload) {
+    const b64 = btoa(JSON.stringify(payload));
+    return window.Luna.exec('p=$(echo ' + b64 + ' | base64 -d); script -q -c "luna-send -n 1 ' + uri + " '$p'\" /dev/null < /dev/null")
+      .then((res) => {
+        const m = /\{[\s\S]*\}/.exec(res.stdoutString || '');
+        const reply = m ? JSON.parse(m[0]) : {};
+        if (reply.returnValue === false) throw new Error(reply.errorText || 'the TV refused');
+        return reply;
+      });
+  }
+
+  const HDMI_KEYS = ['uhdDeepColorHDMI1', 'uhdDeepColorHDMI2', 'uhdDeepColorHDMI3', 'uhdDeepColorHDMI4', 'hdmiPcMode', 'simplinkEnable', 'simplinkAutoPowerOn'];
+
+  function loadHdmi() {
+    rootLuna('luna://com.webos.settingsservice/getSystemSettings', { category: 'other', keys: HDMI_KEYS }).then((r) => {
+      sidebar.hdmi = r.settings || {};
+      renderSidebar();
+    }, (err) => {
+      sidebar.hdmi = { error: err.message };
+      renderSidebar();
+    });
+  }
+
+  function setTvSetting(key, value) {
+    const settings = {};
+    settings[key] = value;
+    rootLuna('luna://com.webos.settingsservice/setSystemSettings', { category: 'other', settings: settings }).then(() => {
+      sidebar.hdmi[key] = value;
+      renderSidebar();
+    }, (err) => toast("Couldn't change that: " + err.message));
+  }
+
+  function onOff(v) {
+    return v === 'on' || v === true ? 'On' : 'Off';
+  }
+
+  function portOf(input) {
+    const m = /HDMI_(\d)/.exec(input.id);
+    return m ? Number(m[1]) : null;
+  }
+
+  function rootMenu() {
+    const items = [
+      { label: 'Home', icon: 'home', run: closeSidebar },
+      { label: 'Inputs', icon: 'input', menu: inputsMenu },
+      { label: 'Launcher settings', icon: 'gear', menu: settingsMenu },
+    ];
+    if (data.rooted) {
+      items.push({ label: 'HDMI settings', icon: 'hdmi', menu: hdmiMenu });
+      items.push({ label: 'System', icon: 'power', menu: systemMenu });
+    } else {
+      items.push({ label: 'TV settings', icon: 'power', run: () => launch('com.palm.app.settings', null, 'Settings') });
+    }
+    return { title: 'Menu', items: items };
+  }
+
+  function inputsMenu() {
+    return {
+      title: 'Inputs',
+      items: inputs.map((i) => ({ label: i.title, run: () => { closeSidebar(); launch(i.appId, null, i.title); } })),
+    };
+  }
+
+  const SAVER_STEPS = [0, 2, 5, 10, 15, 30];
+
+  function settingsMenu() {
+    const s = state.settings;
+    const theme = THEMES.filter((t) => t.id === state.theme)[0];
+    const minutes = saverMinutes();
+    return {
+      title: 'Launcher settings',
+      items: [
+        { label: 'Theme', value: theme ? theme.name : '', run: cycleTheme },
+        {
+          label: 'Screensaver',
+          value: minutes ? 'After ' + minutes + ' min' : 'Off',
+          run: () => {
+            const i = SAVER_STEPS.indexOf(minutes);
+            saveSetting('screensaverMinutes', SAVER_STEPS[(i + 1) % SAVER_STEPS.length]);
+            resetIdle();
+          },
+        },
+        { label: 'Clock', value: s.clock24 ? '24-hour' : '12-hour', run: () => { saveSetting('clock24', !s.clock24); tick(); } },
+        {
+          label: 'Temperature',
+          value: (s.units || (weatherCfg && weatherCfg.units) || 'fahrenheit') === 'celsius' ? '°C' : '°F',
+          run: () => {
+            const now = s.units || (weatherCfg && weatherCfg.units) || 'fahrenheit';
+            saveSetting('units', now === 'celsius' ? 'fahrenheit' : 'celsius');
+            loadWeather();
+          },
+        },
+        { label: 'Hidden apps', value: state.showHidden ? 'Shown' : 'Left out', run: () => { state.showHidden = !state.showHidden; render(); } },
+        { label: 'Reload the launcher', run: () => location.reload() },
+      ],
+    };
+  }
+
+  function hdmiMenu() {
+    if (!sidebar.hdmi) {
+      loadHdmi();
+      return { title: 'HDMI settings', items: [{ label: 'Reading the TV\'s settings…', disabled: true }] };
+    }
+    if (sidebar.hdmi.error) return { title: 'HDMI settings', items: [{ label: "Couldn't read them: " + sidebar.hdmi.error, disabled: true }] };
+    const h = sidebar.hdmi;
+    const items = inputs.filter((i) => portOf(i)).map((i) => ({ label: i.title, value: 'HDMI ' + portOf(i), menu: () => portMenu(i) }));
+    items.push({ label: 'SIMPLINK (HDMI-CEC)', value: onOff(h.simplinkEnable), run: () => setTvSetting('simplinkEnable', h.simplinkEnable === 'on' ? 'off' : 'on') });
+    items.push({ label: 'Auto power sync', value: onOff(h.simplinkAutoPowerOn), run: () => setTvSetting('simplinkAutoPowerOn', h.simplinkAutoPowerOn === 'on' ? 'off' : 'on') });
+    return { title: 'HDMI settings', items: items };
+  }
+
+  function portMenu(input) {
+    const n = portOf(input);
+    const h = sidebar.hdmi;
+    const deep = 'uhdDeepColorHDMI' + n;
+    let pc = {};
+    try {
+      pc = JSON.parse(h.hdmiPcMode || '{}');
+    } catch (e) {
+      // Unreadable: treat every port as off.
+    }
+    return {
+      title: input.title + ' · HDMI ' + n,
+      items: [
+        { label: 'Switch to ' + input.title, run: () => { closeSidebar(); launch(input.appId, null, input.title); } },
+        { label: 'Deep Color (4K HDR)', value: onOff(h[deep]), run: () => setTvSetting(deep, h[deep] === 'on' ? 'off' : 'on') },
+        {
+          label: 'PC mode',
+          value: onOff(pc['hdmi' + n]),
+          run: () => {
+            const next = Object.assign({}, pc);
+            next['hdmi' + n] = !pc['hdmi' + n];
+            setTvSetting('hdmiPcMode', JSON.stringify(next));
+          },
+        },
+      ],
+    };
+  }
+
+  function systemMenu() {
+    return {
+      title: 'System',
+      items: [
+        { label: 'LG settings', run: () => { closeSidebar(); launch('com.palm.app.settings', null, 'Settings'); } },
+        {
+          label: 'Turn off the TV',
+          confirm: 'Press OK again to turn off',
+          run: () => rootLuna('luna://com.webos.service.tvpower/power/powerOff', { reason: 'remoteKey' }).catch((err) => toast("Couldn't turn off: " + err.message)),
+        },
+        {
+          label: 'Reboot the TV',
+          confirm: 'Press OK again to reboot',
+          run: () => {
+            toast('Rebooting…');
+            window.Luna.exec('sync; reboot').catch(() => {});
+          },
+        },
+      ],
+    };
+  }
+
+  function currentMenu() {
+    return sidebar.stack[sidebar.stack.length - 1].menu();
+  }
+
+  function renderSidebar() {
+    if (!sidebar.open) return;
+    const menu = currentMenu();
+    const usable = menu.items.map((it, i) => (it.disabled ? -1 : i)).filter((i) => i !== -1);
+    if (usable.indexOf(sidebar.index) === -1) sidebar.index = usable.length ? usable[0] : 0;
+    $('sb-title').textContent = menu.title;
+    $('sb-back').style.visibility = sidebar.stack.length > 1 ? 'visible' : 'hidden';
+    const list = $('sb-list');
+    list.textContent = '';
+    menu.items.forEach((it, i) => {
+      const row = el('div', 'sb-item' + (i === sidebar.index ? ' focused' : '') + (it.disabled ? ' disabled' : '') + (sidebar.armed === it.label ? ' armed' : ''));
+      if (it.icon) {
+        const icon = el('span', 'sb-icon');
+        icon.innerHTML = sbIcon(it.icon);
+        row.appendChild(icon);
+      }
+      row.appendChild(el('span', 'sb-label', it.label));
+      const value = sidebar.armed === it.label ? it.confirm : it.value;
+      if (value) row.appendChild(el('span', 'sb-value', value));
+      if (it.menu) row.appendChild(el('span', 'sb-more', '›'));
+      row.addEventListener('click', () => {
+        sidebar.index = i;
+        sidebarSelect();
+      });
+      list.appendChild(row);
+    });
+    $('sb-foot').textContent = sidebar.stack.length > 1 ? 'OK choose  ·  ◀ or BACK go back' : 'OK choose  ·  ▶ or BACK close';
+  }
+
+  function openSidebar() {
+    sidebar.open = true;
+    sidebar.stack = [{ menu: rootMenu, from: 0 }];
+    sidebar.index = 0;
+    sidebar.hdmi = null;
+    $('sidebar').classList.add('open');
+    $('sidebar').setAttribute('aria-hidden', 'false');
+    $('app').classList.add('sb-open');
+    renderSidebar();
+    renderHints();
+  }
+
+  function closeSidebar() {
+    sidebar.open = false;
+    sidebar.armed = null;
+    $('sidebar').classList.remove('open');
+    $('sidebar').setAttribute('aria-hidden', 'true');
+    $('app').classList.remove('sb-open');
+    renderHints();
+  }
+
+  function sidebarSelect() {
+    const it = currentMenu().items[sidebar.index];
+    if (!it || it.disabled) return;
+    if (it.menu) {
+      sidebar.stack.push({ menu: it.menu, from: sidebar.index });
+      sidebar.index = 0;
+      sidebar.armed = null;
+    } else if (it.confirm && sidebar.armed !== it.label) {
+      // Turning off and rebooting take a second OK within a few seconds.
+      sidebar.armed = it.label;
+      clearTimeout(sidebar.armedTimer);
+      sidebar.armedTimer = setTimeout(() => {
+        sidebar.armed = null;
+        renderSidebar();
+      }, 4000);
+    } else {
+      sidebar.armed = null;
+      it.run();
+    }
+    renderSidebar();
+  }
+
+  function sidebarKey(k) {
+    const menu = currentMenu();
+    const back = k === KEY.BACK || k === KEY.BACKSPACE || k === KEY.ESC;
+    if (k === KEY.UP || k === KEY.DOWN) {
+      const dir = k === KEY.UP ? -1 : 1;
+      let i = sidebar.index;
+      do {
+        i += dir;
+      } while (i >= 0 && i < menu.items.length && menu.items[i].disabled);
+      if (i >= 0 && i < menu.items.length) sidebar.index = i;
+      sidebar.armed = null;
+      renderSidebar();
+    } else if (k === KEY.ENTER) {
+      sidebarSelect();
+    } else if (k === KEY.RIGHT) {
+      if (menu.items[sidebar.index] && menu.items[sidebar.index].menu) sidebarSelect();
+      else if (sidebar.stack.length === 1) closeSidebar();
+    } else if (back || k === KEY.LEFT) {
+      if (sidebar.stack.length > 1) {
+        sidebar.index = sidebar.stack.pop().from;
+        sidebar.armed = null;
+        renderSidebar();
+      } else if (back) {
+        closeSidebar();
+      }
+    }
+  }
+
   // ---------------------------------------------------------------- clock
 
   function tick() {
     const now = new Date();
-    const time = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const time = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: !state.settings.clock24 });
     const date = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
     $('time').textContent = time;
     $('date').textContent = date;
@@ -1020,7 +1335,7 @@
   // ---------------------------------------------------------------- layout backup
 
   function layoutNow() {
-    return { order: state.order, hidden: state.hidden, favorites: state.favorites, theme: state.theme };
+    return { order: state.order, hidden: state.hidden, favorites: state.favorites, theme: state.theme, settings: state.settings };
   }
 
   let backupTimer = null;
