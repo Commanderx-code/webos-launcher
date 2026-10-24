@@ -145,10 +145,13 @@ npm run install-ipk -- some-app.ipk                # any other webOS package
 [LG Input Hook](https://github.com/Simon34545/lginputhook), a root-only app from the Homebrew Channel, can make the remote's Home button open the launcher. Install it, open it once (that starts it, and it then starts itself at boot), and put this in `/home/root/.config/lginputhook/keybinds.json` on the TV:
 
 ```json
-{"773": {"action": "launch", "id": "com.minimal.launcher"}}
+{
+  "773": {"action": "launch", "id": "com.minimal.launcher"},
+  "2": {"action": "launch", "id": "com.webos.app.home"}
+}
 ```
 
-773 is Home on LG's infrared remotes (checked on an AKB75675313). Input Hook reloads the file when it changes. To find another button's code, open Input Hook and watch its log while pressing the button. Don't press "Save changes" in Input Hook's own screen unless it shows your keybinds, because it overwrites the file with what it shows.
+773 is Home on LG's infrared remotes (checked on an AKB75675313); it opens the launcher. 2 is the **1** button; it opens LG's own home bar (`com.webos.app.home`) as a fallback. Input Hook reloads the file when it changes. To find another button's code, open Input Hook and watch its log while pressing the button. Don't press "Save changes" in Input Hook's own screen unless it shows your keybinds, because it overwrites the file with what it shows.
 
 ## Keeping Developer Mode alive
 
