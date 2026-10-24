@@ -8,18 +8,19 @@ A minimal home screen for LG webOS TVs, made for a stock TV in Developer Mode (w
 - **Continue Watching**, **Watchlist** (rooted TVs) and **Recently Added** from your Plex server
 - **All Apps**: everything else, which you can rearrange and hide
 - **Inputs**: only the ones with something plugged in, named after the device when it says what it is
-- **Themes**: **Ambient** (the focused app's color glows behind the grid), **Aurora** (slowly drifting colors), **Midnight** (plain dark) and **Wallpaper** (your own picture or looping video)
-- **Screensaver**: after a few idle minutes, a big clock and the weather over your own pictures and videos, or Plex artwork
+- **Themes**: **Ambient** (the focused app's color glows behind the grid), **Aurora** (slowly drifting colors), **Midnight** (plain dark), **Ocean**, **Sunset** and **Starry space** (painted landscapes that move slowly: rolling swells, drifting clouds, twinkling stars) and your own wallpapers, each a theme of its own (a picture or a looping video)
+- **Icons**: the apps' own icons, or glass tiles with every logo in white, in its brand color or in ice blue, over any theme. The glass itself can be clear or tinted
+- **Screensaver**: after a few idle minutes, a big clock and the weather over your own pictures and videos (all of them shuffled, or just the one you pick), or Plex artwork
 
 ![The launcher's home screen](docs/screenshots/home.jpg)
 
-| Plex rows, Aurora theme | Editing an app |
+| Plex rows | Editing an app |
 | --- | --- |
 | ![Continue Watching and Recently Added from Plex](docs/screenshots/plex-rows.jpg) | ![Moving an app in edit mode](docs/screenshots/edit.jpg) |
+| **The side menu** | **The screensaver** |
+| ![Launcher settings in the side menu, with the theme list open](docs/screenshots/sidebar.jpg) | ![The screensaver with one picture picked](docs/screenshots/screensaver.jpg) |
 
-![The screensaver](docs/screenshots/screensaver.jpg)
-
-*Screenshots are from the launcher's code running in a desktop browser at 1920×1080, with sample titles and artwork in place of a real Plex library.*
+*Shown with a wallpaper of your own (here, a painting by Jorge Jacinto), the white glass icons and a screensaver of one picture. Screenshots are from the launcher's code running in a desktop browser at 1920×1080, with sample titles and artwork in place of a real Plex library.*
 
 There's no build step. The app is plain HTML, CSS and JavaScript in `app/`, written for the Chromium 68 engine that webOS 5 runs.
 
@@ -31,7 +32,7 @@ There's no build step. The app is plain HTML, CSS and JavaScript in `app/`, writ
 | OK | Open the app, switch input, or open Plex from a Plex card | Done |
 | Hold OK or Yellow | Edit the app or input | Done |
 | Green | Show hidden apps, or leave them out again | Add to or remove from Favorites (inputs too) |
-| Red | | Hide or unhide |
+| Red | Next icon style | Hide or unhide |
 | Blue | Next theme | |
 | Back | Leave out hidden apps again | Done |
 | Left on a row's first tile | Open the menu | |
@@ -97,12 +98,13 @@ A stock TV won't let an app replace the Home button. Two things get close:
 | `weather.zip` | The ZIP code for the weather. Leave `weather` out to hide it. `weather.units` is `fahrenheit` or `celsius`. |
 | `screensaverMinutes` | Idle minutes before the screensaver starts (default 5); `0` turns it off. |
 | `screensaverFolder` | A folder of your own pictures and videos for the screensaver, shown in random order, e.g. `"~/Pictures/Launcher screen savers"`. Pictures stay up 12 seconds; videos play through. Leave it empty to show Plex artwork instead. |
+| `screensaverNames` | Names for the screensaver's files in the sidebar's picker, by file name, e.g. `{"HSNePJz.jpeg": "Sith tower"}`. Files without one are named after the file. |
 | `plex.appId` | The app the Plex cards open, by app ID. Defaults to the official Plex app; e.g. `"com.beb.plxnative"` for PlxNative. |
-| `theme` | The starting theme: `ambient`, `aurora`, `midnight` or `photo` (Wallpaper). Once you pick one with the blue button, the TV's choice wins. |
-| `tiles` | Your own tile looks, keyed by app name or ID, or input ID: `title` (a new name), `bgColor`, `icon` (a picture; plain margins are trimmed) and `removeBackground` (makes the icon's plain border see-through, for icons that come on a solid square). E.g. `{"Netflix": {"bgColor": "#000000"}, "HDMI_2": {"icon": "media/tiles/spectrum-tv.png", "bgColor": "#ffffff"}}`. |
-| `wallpaper` | A picture or a short looping video (`.mp4` or `.webm`) for the Wallpaper theme, e.g. `"~/Videos/loop.mp4"`. Videos play silently. Keep them short and 1080p; the whole file goes onto the TV. |
+| `theme` | The starting theme: `ambient`, `aurora`, `midnight`, `ocean`, `sunset`, `space`, or a wallpaper's ID such as `wall-revan` (`wall-` and its name in lowercase, with dashes for spaces). Once you pick one with the blue button, the TV's choice wins. |
+| `tiles` | Your own tile looks, keyed by app name or ID, or input ID: `title` (a new name), `bgColor`, `icon` (a picture; plain margins are trimmed), `removeBackground` (makes the icon's plain border see-through, for icons that come on a solid square), and for the glass icons `glassColor` (the logo's color) and `glassIcon` (a picture or `.svg` to use as its silhouette). E.g. `{"Netflix": {"bgColor": "#000000"}, "HDMI_2": {"icon": "media/tiles/spectrum-tv.png", "bgColor": "#ffffff"}}`. |
+| `wallpapers` | Your own wallpapers, each a theme of its own: a list of `{ "name": "Revan", "file": "~/Videos/revan.mp4" }`. A file is a picture or a short looping video (`.mp4` or `.webm`); videos play silently. Keep videos short; the whole file goes onto the TV. The older single `wallpaper` (a file) still works, as a theme named Wallpaper. |
 
-Pictures and videos for the wallpaper and screensaver are converted to 1080p (JPEG, or silent H.264 video) when they're synced. Converted copies are kept in `media/cache`, so only new or changed files are converted again.
+Pictures and videos for the wallpapers and screensaver are converted to 1080p (JPEG, or silent H.264 video) when they're synced; a wallpaper video that's already H.264 at 1080p or less goes as it is. Converted copies are kept in `media/cache`, so only new or changed files are converted again.
 
 The updater picks up changes here, and files added to the screensaver folder, within the hour. To see them right away, run `npm run sync` and `npm run deploy`.
 
@@ -167,7 +169,7 @@ npm run install-ipk -- some-app.ipk                # any other webOS package
 
 ### Commercial mute
 
-`tv/bin/commercial-mute` toggles the TV's mute: muting starts a 2½-minute timer that unmutes it again, and a press while muted unmutes at once. It uses `com.webos.service.audio/master/muteVolume`, the mute the remote's button toggles (`com.webos.audio` has a separate one). Input Hook swallows a key it runs a command for, and kills what the command leaves behind, so the timer runs detached with `setsid`. `tv/lginputhook/keybinds.json` puts it on the remote's Mute button (code 113), next to Home → launcher (773) and 1 → LG's home bar (2). `npm run tv-setup` installs both. To change the length, edit the `150` in the keybinds file.
+`tv/bin/commercial-mute` toggles the TV's mute: muting starts a 2½-minute timer that unmutes it again, and a press while muted unmutes at once. It uses `com.webos.service.audio/master/muteVolume`, the mute the remote's button toggles (`com.webos.audio` has a separate one). Input Hook swallows a key it runs a command for, and kills what the command leaves behind, so the timer runs detached with `setsid`. `tv/lginputhook/keybinds.json` puts it on the remote's Mute button (code 113), next to Home and Exit → launcher (773 and 174) 1 → LG's home bar (2) and the dot → the sidebar (1038). `npm run tv-setup` installs both. To change the length, edit the `150` in the keybinds file.
 
 ### Menu
 
@@ -176,7 +178,7 @@ Pressing Left on the first tile of any row slides out a menu (Up/Down to move, O
 - **Inputs**: switch straight to one.
 - **Picture & sound** (rooted TVs): the picture mode and sound mode of the apps and of each input (LG keeps one of each per input), from the modes the TV offers.
 - **Sleep timer** (rooted TVs): 30, 60, 90 or 120 minutes, with a TV notification a minute before. The helper on the TV runs it, so it works whatever app is on screen.
-- **Launcher settings**: theme, when the screensaver starts, 12- or 24-hour clock, °F or °C, showing hidden apps. Saved with the layout backup.
+- **Launcher settings**: theme, icons, the glass color (with glass icons on), when the screensaver starts and what it shows, a button to start it now, 12- or 24-hour clock, °F or °C, showing hidden apps. Saved with the layout backup.
 - **HDMI settings** (rooted TVs): per input, Deep Color (needed for 4K HDR at full quality) and PC mode; and SIMPLINK (HDMI-CEC) and Auto Power Sync for the whole TV. These are the TV's own settings, read and changed through `com.webos.settingsservice` as root.
 - **System**: LG's settings app; turning the TV off and rebooting it, each after a second OK.
 
@@ -211,11 +213,13 @@ umount /etc/systemd/system/scripts/webapp-mgr.sh && systemctl restart webapp-mgr
 ```json
 {
   "773": {"action": "launch", "id": "com.minimal.launcher"},
-  "2": {"action": "launch", "id": "com.webos.app.home"}
+  "174": {"action": "launch", "id": "com.minimal.launcher"},
+  "2": {"action": "launch", "id": "com.webos.app.home"},
+  "1038": {"action": "exec", "command": "/home/root/minimal-launcher/bin/launcher-sidebar"}
 }
 ```
 
-773 is Home on LG's infrared remotes (checked on an AKB75675313); it opens the launcher. 2 is the **1** button; it opens LG's own home bar (`com.webos.app.home`) as a fallback. Input Hook reloads the file when it changes. To find another button's code, open Input Hook and watch its log while pressing the button. Don't press "Save changes" in Input Hook's own screen unless it shows your keybinds, because it overwrites the file with what it shows.
+773 is Home on LG's infrared remotes (checked on an AKB75675313) and 174 is Exit; both open the launcher, so leaving an app or the TV's settings lands on the launcher instead of live TV. Pressed on the launcher itself, either one goes back to the top of the home screen and closes the sidebar. 2 is the **1** button; it opens LG's own home bar (`com.webos.app.home`) as a fallback. 1038 is the **.** (dot) button; `tv/bin/launcher-sidebar` launches the launcher with its sidebar open from anywhere, and on the launcher it opens or closes the sidebar. Input Hook reloads the file when it changes. To find another button's code, open Input Hook and watch its log while pressing the button. Don't press "Save changes" in Input Hook's own screen unless it shows your keybinds, because it overwrites the file with what it shows.
 
 ## Keeping Developer Mode alive
 
@@ -239,9 +243,10 @@ User timers only run while you're logged in. `Persistent=true` catches up on a m
 ## Layout
 
 ```
-app/          the TV app: index.html, style.css, main.js, luna.js, plex.js, weather.js
+app/          the TV app: index.html, style.css, main.js, luna.js, plex.js, weather.js, scenes.js
 app/data/     written by `npm run sync`; not in git (it holds your Plex token)
 tools/        sync, auto-update, deploy, plex-login and extend-devmode
+tools/glass-icons/  silhouettes drawn for the glass icons; most come from Simple Icons
 config.json   your TV address and settings; not in git
 dist/         the built package and a fingerprint of what's installed
 ```
@@ -250,4 +255,4 @@ To preview in a desktop browser, open `app/index.html` with the window at 1920×
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). The glass icons' logos come from [Simple Icons](https://simpleicons.org) (CC0); the brands are their owners' trademarks.

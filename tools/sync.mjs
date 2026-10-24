@@ -4,17 +4,17 @@
 import LGTV from 'lgtv2';
 import http from 'node:http';
 import https from 'node:https';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DATA_DIR, ROOT, readAppInfo, readConfig, requireTvHost, writeConfig, writePrivate } from './config.mjs';
-import { expandHome, prepareScreensaver } from './media.mjs';
+import { expandHome, prepareScreensaver, prepareWallpapers } from './media.mjs';
 import { isRooted, readRemote, writeRemote } from './tv-root.mjs';
 import { fetchWatchlist } from './watchlist.mjs';
+import { addGlass } from './glass.mjs';
 import { spawnSync } from 'node:child_process';
 
 const ICON_DIR = path.join(DATA_DIR, 'icons');
-const VIDEO_EXTS = ['.mp4', '.webm', '.mov', '.m4v'];
 
 function download(url) {
   return new Promise((resolve, reject) => {
@@ -67,17 +67,12 @@ async function locate(config) {
   }
 }
 
-function wallpaperFrom(config) {
+// The wallpapers from config.json: "wallpapers", a list of { name, file }, or the older
+// single "wallpaper".
+function wallpapersFrom(config) {
   for (const f of readdirSync(DATA_DIR)) if (f.startsWith('wallpaper.')) rmSync(path.join(DATA_DIR, f));
-  if (!config.wallpaper) return null;
-  const src = path.resolve(ROOT, config.wallpaper.replace(/^~(?=\/)/, process.env.HOME));
-  if (!existsSync(src)) {
-    console.warn(`Wallpaper ${src} not found; leaving the Wallpaper theme out.`);
-    return null;
-  }
-  const ext = path.extname(src).toLowerCase();
-  copyFileSync(src, path.join(DATA_DIR, `wallpaper${ext}`));
-  return { src: `data/wallpaper${ext}`, video: VIDEO_EXTS.includes(ext) };
+  const list = config.wallpapers || (config.wallpaper ? [{ name: 'Wallpaper', file: config.wallpaper }] : []);
+  return prepareWallpapers(list);
 }
 
 export async function runSync() {
@@ -150,6 +145,7 @@ export async function runSync() {
     // Your own tile looks from config.json "tiles", keyed by app name or ID, or input ID or name:
     // a new name, a background color, a picture for the icon (trimmed of plain margins), and removeBackground
     // to make the icon's plain border see-through, for icons that come on a solid square.
+    const looks = new Map();
     for (const [name, look] of Object.entries(config.tiles || {})) {
       const lower = name.toLowerCase();
       const targets = [
@@ -177,10 +173,18 @@ export async function runSync() {
         else console.warn(`tiles: couldn't use ${src}: ${(res.stderr || res.error || '').toString().trim()}`);
       }
       for (const t of targets) {
+        looks.set(t, look);
         if (look.title) t.title = look.title;
         if (look.bgColor) t.bgColor = look.bgColor;
         if (icon) t.icon = icon;
       }
+    }
+
+    // One-color icons for the glass icon styles, made from each tile's final icon.
+    for (const t of [...apps, ...inputs]) {
+      const look = Object.assign({}, looks.get(t));
+      if (look.glassIcon) look.glassIcon = expandHome(look.glassIcon);
+      addGlass(t, ICON_DIR, DATA_DIR, look);
     }
 
     let plex = null;
@@ -244,13 +248,13 @@ export async function runSync() {
       inputs,
       plex,
       weather: await locate(config),
-      wallpaper: wallpaperFrom(config),
+      wallpapers: wallpapersFrom(config),
       theme: config.theme || null,
       rooted,
       exclude: config.exclude || [],
       screensaverMinutes: config.screensaverMinutes == null ? 5 : config.screensaverMinutes,
       // Your own pictures and videos for the screensaver; without them it shows Plex artwork.
-      screensaver: prepareScreensaver(config.screensaverFolder),
+      screensaver: prepareScreensaver(config.screensaverFolder, config.screensaverNames),
     };
     writePrivate(
       path.join(DATA_DIR, 'data.js'),

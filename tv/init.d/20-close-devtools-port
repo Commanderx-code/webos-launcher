@@ -5,8 +5,14 @@
 # To reopen the port: umount /etc/systemd/system/scripts/webapp-mgr.sh && systemctl restart webapp-mgr
 ORIG=/etc/systemd/system/scripts/webapp-mgr.sh
 COPY=/home/root/lockdown/webapp-mgr.sh
-grep -q -- "--remote-debugging-port" "$ORIG" || exit 0
-mkdir -p /home/root/lockdown
-grep -v -- "--remote-debugging-port" "$ORIG" > "$COPY" && chmod 755 "$COPY" && sh -n "$COPY" || exit 1
-mount --bind "$COPY" "$ORIG"
-if netstat -ltn | grep -q ":9998 "; then systemctl restart webapp-mgr.service; fi
+if grep -q -- "--remote-debugging-port" "$ORIG"; then
+  mkdir -p /home/root/lockdown
+  grep -v -- "--remote-debugging-port" "$ORIG" > "$COPY" && chmod 755 "$COPY" && sh -n "$COPY" || exit 1
+  mount --bind "$COPY" "$ORIG"
+fi
+# At boot it may have read the original script before the copy was in place, and the port
+# isn't always listening yet, so look at its processes rather than the port. The [t] keeps
+# grep from matching its own command line.
+if grep -qa -- "--remote-debugging-por[t]" /proc/[0-9]*/cmdline 2>/dev/null; then
+  systemctl restart webapp-mgr.service
+fi

@@ -1,0 +1,27 @@
+#!/bin/sh
+# Life's Good Without Spying's "stop ad services" option swaps LG's ad manager for a stub that
+# does nothing, and Disney+, ESPN and Peacock then hang on their loading screens. This removes
+# just that one stub after it's applied at boot; the app's other blocks stay on.
+# Pressing Apply in that app stubs it again: rerun this (npm run tv-setup) or restart the TV.
+BIN=/usr/sbin/admanager
+RUN=/run/minimal-launcher
+mkdir -p "$RUN" && chmod 700 "$RUN"
+
+unstub() {
+  # Applied twice, it's mounted twice.
+  while mount | grep -q " $BIN "; do
+    umount "$BIN" || return
+    echo "$(date '+%F %T') removed the admanager stub" >> "$RUN/allow-admanager.log"
+  done
+}
+
+unstub
+# In case it's stubbed after this runs, look again for a few minutes.
+(
+  i=0
+  while [ $i -lt 36 ]; do
+    sleep 5
+    unstub
+    i=$((i + 1))
+  done
+) > /dev/null 2>&1 &

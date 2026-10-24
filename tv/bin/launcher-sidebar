@@ -1,0 +1,5 @@
+#!/bin/sh
+# A remote button for the launcher's sidebar, via LG Input Hook: brings the launcher up with its
+# sidebar open from anywhere. Pressed on the launcher, it opens or closes the sidebar.
+# luna-send only answers with a terminal attached; script(1) gives it one.
+script -q -c "luna-send -n 1 luna://com.webos.applicationManager/launch '{\"id\":\"com.minimal.launcher\",\"params\":{\"sidebar\":true}}'" /dev/null < /dev/null > /dev/null
