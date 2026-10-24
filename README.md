@@ -143,10 +143,14 @@ npm run install-ipk -- some-app.ipk                # any other webOS package
 
 ### TV-side hooks
 
-`tv/init.d/` holds startup hooks for a rooted TV; `npm run tv-setup` copies them to `/var/lib/webosbrew/init.d/` and starts them. The Homebrew Channel runs them at every boot.
+`tv/init.d/` holds startup hooks for a rooted TV; `npm run tv-setup` copies them to `/var/lib/webosbrew/init.d/` and starts them, and installs `tv/bin/` and Input Hook's keybinds. The Homebrew Channel runs the hooks at every boot.
 
 - `20-close-devtools-port`: closes the debug port (below).
 - `30-launcher-on-wake`: opens the launcher when the TV is turned on with the remote (the TV reports why it turned on: `getPowerOnReason` says `remoteKey`), and for 20 seconds takes the screen back if a device woken with the TV grabs it over HDMI-CEC. When something else turned the TV on, such as a console over HDMI-CEC, it stays where that put it. Its log is `/run/minimal-launcher/launcher-on-wake.log`; `30-launcher-on-wake states` prints power states as they change.
+
+### Commercial mute
+
+`tv/bin/commercial-mute` mutes the TV for 2½ minutes and then unmutes it; run again while muted, it unmutes at once. `tv/lginputhook/keybinds.json` puts it on the remote's Mute button (code 113), next to Home → launcher (773) and 1 → LG's home bar (2). `npm run tv-setup` installs both. To change the length, edit the `150` in the keybinds file.
 
 ### Layout backup
 

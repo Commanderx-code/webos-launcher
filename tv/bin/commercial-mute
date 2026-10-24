@@ -1,0 +1,39 @@
+#!/bin/sh
+# The remote's Mute button, via LG Input Hook: mutes for a commercial break, then unmutes by
+# itself. Pressed again while muted, it unmutes right away.
+#
+#   commercial-mute [seconds]   default 150 (2½ minutes)
+
+SECONDS_MUTED=${1:-150}
+# /run, not /tmp: only root can write there (see 30-launcher-on-wake).
+RUN=/run/minimal-launcher
+PIDFILE=$RUN/commercial-mute.pid
+
+mkdir -p "$RUN" && chmod 700 "$RUN"
+
+# luna-send only answers with a terminal attached; script(1) gives it one.
+set_muted() {
+  script -q -c "luna-send -n 1 luna://com.webos.audio/setMuted '{\"muted\":$1}'" /dev/null < /dev/null > /dev/null
+}
+
+# A timer from an earlier press, if its pid file names a live copy of this script.
+pid=$(cat "$PIDFILE" 2>/dev/null)
+case "$pid" in
+  ''|*[!0-9]*) pid="" ;;
+  *) grep -q "commercial-mute" "/proc/$pid/cmdline" 2>/dev/null || pid="" ;;
+esac
+
+if [ -n "$pid" ]; then
+  kill "$pid" 2>/dev/null
+  rm -f "$PIDFILE"
+  set_muted false
+  exit 0
+fi
+
+set_muted true
+(
+  sleep "$SECONDS_MUTED"
+  set_muted false
+  rm -f "$PIDFILE"
+) > /dev/null 2>&1 < /dev/null &
+echo $! > "$PIDFILE"
