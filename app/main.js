@@ -189,7 +189,8 @@
     if (used.length) sections.push({ id: 'used', title: 'Recently Used', scroll: true, big: true, items: used });
     if (plex) {
       sections.push(plexSection('continue', 'Continue Watching', 'Nothing in progress'));
-      if (data.rooted) sections.push(plexSection('watchlist', 'Watchlist', 'Nothing saved'));
+      // Only where the TV's file can be read (not in a desktop browser preview).
+      if (data.rooted && window.Luna.available()) sections.push(plexSection('watchlist', 'Watchlist', 'Nothing saved'));
       sections.push(plexSection('recent', 'Recently Added', 'Nothing new'));
     }
     sections.push({ id: 'apps', title: favs.length ? 'All Apps' : 'Apps', items: gridApps().map(appItem) });
