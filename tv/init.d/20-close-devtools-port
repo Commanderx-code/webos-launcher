@@ -1,0 +1,12 @@
+#!/bin/sh
+# Closes the web app manager's remote debugging port (9998), which otherwise listens on every
+# network interface. There is no firewall in this kernel, so this bind-mounts a copy of its
+# startup script without --remote-debugging-port and restarts it if it is already running.
+# To reopen the port: umount /etc/systemd/system/scripts/webapp-mgr.sh && systemctl restart webapp-mgr
+ORIG=/etc/systemd/system/scripts/webapp-mgr.sh
+COPY=/home/root/lockdown/webapp-mgr.sh
+grep -q -- "--remote-debugging-port" "$ORIG" || exit 0
+mkdir -p /home/root/lockdown
+grep -v -- "--remote-debugging-port" "$ORIG" > "$COPY" && chmod 755 "$COPY" && sh -n "$COPY" || exit 1
+mount --bind "$COPY" "$ORIG"
+if netstat -ltn | grep -q ":9998 "; then systemctl restart webapp-mgr.service; fi

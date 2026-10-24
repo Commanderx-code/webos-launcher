@@ -1,0 +1,87 @@
+#!/bin/sh
+# Opens the launcher when the TV turns on, unless a device woke it: when the TV comes up on an
+# HDMI input (the Xbox turned it on over HDMI-CEC, say), it stays there. Watches the TV's power
+# state from the background; the Homebrew Channel runs this at boot.
+#
+#   30-launcher-on-wake          start the watcher (what the Homebrew Channel does)
+#   30-launcher-on-wake states   print power states as they change, for testing
+#
+# Its log is /tmp/launcher-on-wake.log.
+
+LAUNCHER=com.minimal.launcher
+LOG=/tmp/launcher-on-wake.log
+PIDFILE=/tmp/launcher-on-wake.pid
+# How long the TV gets to finish waking and show what it resumes to before we look.
+SETTLE=6
+BOOT_SETTLE=20
+
+# luna-send only answers with a terminal attached; script(1) gives it one.
+luna() {
+  script -q -c "luna-send -n 1 $1 '$2'" /dev/null < /dev/null | tr -d '\r'
+}
+
+field() {
+  sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p"
+}
+
+log() {
+  echo "$(date '+%F %T') $*" >> "$LOG"
+}
+
+open_launcher() {
+  sleep "$1"
+  app=$(luna luna://com.webos.applicationManager/getForegroundAppInfo '{}' | field appId)
+  case "$app" in
+    com.webos.app.hdmi*|com.webos.app.externalinput*) log "on $app, so a device woke the TV; leaving it" ;;
+    "$LAUNCHER") log "the launcher is already up" ;;
+    *)
+      log "on ${app:-nothing}; opening the launcher"
+      luna luna://com.webos.applicationManager/launch "{\"id\":\"$LAUNCHER\"}" > /dev/null
+      ;;
+  esac
+}
+
+# One line per power state change, as the TV reports it.
+states() {
+  script -q -c "luna-send -i luna://com.webos.service.tvpower/power/getPowerState '{\"subscribe\":true}'" /dev/null < /dev/null |
+    tr -d '\r' | while read -r line; do
+      state=$(echo "$line" | field state)
+      [ -n "$state" ] && echo "$state"
+    done
+}
+
+watch() {
+  open_launcher "$BOOT_SETTLE" &
+  while true; do
+    last=""
+    states | while read -r state; do
+      [ "$state" = "$last" ] && continue
+      log "power: ${last:-start} -> $state"
+      # Only a real power-on counts: not leaving the screen-off mode or a screensaver.
+      case "$last" in
+        Suspend|"Active Standby"|"Power Off"|Off)
+          [ "$state" = Active ] && open_launcher "$SETTLE" &
+          ;;
+      esac
+      last=$state
+    done
+    # The subscription ended (the power service restarted); subscribe again.
+    sleep 5
+  done
+}
+
+case "$1" in
+  states)
+    states
+    ;;
+  run)
+    echo $$ > "$PIDFILE"
+    log "watching the power state"
+    watch
+    ;;
+  *)
+    # Started by the Homebrew Channel: run in the background, once.
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then exit 0; fi
+    setsid "$0" run > /dev/null 2>&1 < /dev/null &
+    ;;
+esac
