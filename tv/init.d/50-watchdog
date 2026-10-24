@@ -1,0 +1,50 @@
+#!/bin/sh
+# Every 5 minutes, starts the power-on watcher and the helper again if either has stopped. Both
+# start scripts do nothing when theirs is already running. The Homebrew Channel runs this at boot.
+#
+#   50-watchdog         start it
+#   50-watchdog stop    stop it
+#
+# Its log is /run/minimal-launcher/watchdog.log.
+
+HOOKS=/var/lib/webosbrew/init.d
+# /run, not /tmp: only root can write there.
+RUN=/run/minimal-launcher
+LOG=$RUN/watchdog.log
+PIDFILE=$RUN/watchdog.pid
+
+running() {
+  pid=$(cat "$PIDFILE" 2>/dev/null)
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  grep -q "50-watchdog" "/proc/$pid/cmdline" 2>/dev/null
+}
+
+alive() {
+  pid=$(cat "$RUN/$1.pid" 2>/dev/null)
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  [ -d "/proc/$pid" ]
+}
+
+case "$1" in
+  stop)
+    if running; then kill -- "-$(cat "$PIDFILE")"; fi
+    rm -f "$PIDFILE"
+    ;;
+  run)
+    echo $$ > "$PIDFILE"
+    while true; do
+      sleep 300
+      for name in launcher-on-wake launcher-helper; do
+        if ! alive "$name"; then
+          echo "$(date '+%F %T') $name had stopped; starting it" >> "$LOG"
+          for hook in "$HOOKS"/*-"$name"; do "$hook"; done
+        fi
+      done
+    done
+    ;;
+  *)
+    mkdir -p "$RUN" && chmod 700 "$RUN"
+    if running; then exit 0; fi
+    setsid "$0" run > /dev/null 2>&1 < /dev/null &
+    ;;
+esac

@@ -1,8 +1,10 @@
-// Run on a timer: if the TV is on and its apps, inputs or the settings in config.json changed
-// since the last install, reinstalls the launcher without opening it.
+// Run on a timer: if the TV is on, updates the sideloaded apps that have new versions, and if
+// its apps, inputs or the settings in config.json changed since the last install, reinstalls
+// the launcher without opening it.
 import LGTV from 'lgtv2';
 import { deploy } from './deploy.mjs';
 import { runSync } from './sync.mjs';
+import { updateApps } from './app-updates.mjs';
 import { dataSignature, readAppInfo, readConfig, readInstalledSignature } from './config.mjs';
 
 function foregroundApp(host) {
@@ -28,14 +30,22 @@ try {
   process.exit(0);
 }
 
+const host = readConfig().tv.host;
+const foreground = await foregroundApp(host);
+
+try {
+  await updateApps(readConfig(), { foreground });
+} catch (err) {
+  console.warn(`App updates skipped: ${err.message}`);
+}
+
 if (dataSignature() === readInstalledSignature()) {
   console.log('No changes since the last install.');
   process.exit(0);
 }
 
 // Reinstalling closes the launcher, so wait while someone is using it.
-const host = readConfig().tv.host;
-if ((await foregroundApp(host)) === readAppInfo().id) {
+if (foreground === readAppInfo().id) {
   console.log('Changes found, but the launcher is on screen; trying again next run.');
   process.exit(0);
 }
