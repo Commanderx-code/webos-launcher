@@ -9,7 +9,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DATA_DIR, ROOT, readAppInfo, readConfig, requireTvHost, writeConfig, writePrivate } from './config.mjs';
 import { expandHome, prepareScreensaver } from './media.mjs';
-import { isRooted, readRemote } from './tv-root.mjs';
+import { isRooted, readRemote, writeRemote } from './tv-root.mjs';
+import { fetchWatchlist } from './watchlist.mjs';
 import { spawnSync } from 'node:child_process';
 
 const ICON_DIR = path.join(DATA_DIR, 'icons');
@@ -220,6 +221,18 @@ export async function runSync() {
         writeFileSync(path.join(ROOT, 'backup', 'layout.json'), JSON.stringify(layout, null, 2) + '\n');
       }
     }
+    // The Plex Watchlist goes straight to the TV, so a change to it doesn't need a reinstall.
+    if (rooted && plex) {
+      try {
+        const watchlist = await fetchWatchlist({ server: plex.server, token: plex.token });
+        if (!writeRemote('/home/root/.config/minimal-launcher/watchlist.json', JSON.stringify({ items: watchlist }), config)) {
+          console.warn("Couldn't write the Watchlist to the TV.");
+        }
+      } catch (err) {
+        console.warn(`Watchlist left as it was: ${err.message}`);
+      }
+    }
+
     const backup = path.join(ROOT, 'backup', 'layout.json');
     writeFileSync(path.join(DATA_DIR, 'layout.js'), '// Written by `npm run sync` from the TV\'s layout backup.\n' +
       `window.LAUNCHER_LAYOUT = ${existsSync(backup) ? readFileSync(backup, 'utf8').trim() : 'null'};\n`);

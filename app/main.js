@@ -67,6 +67,7 @@
     order: store.get('order', packagedLayout.order || []),
     hidden: store.get('hidden', packagedLayout.hidden || []),
     favorites: store.get('favorites', packagedLayout.favorites || data.favorites || []),
+    used: store.get('used', []),   // app IDs last on screen, newest first (from the TV helper)
     showHidden: false,
     editing: null,   // app key, or "input:<id>" for an input, of the tile being edited
     focus: null,     // key of the focused item, e.g. "app:netflix" or "continue:2"
@@ -77,6 +78,7 @@
     plexRows: {
       continue: { items: store.get('cache.continue', []), error: null, loaded: false },
       recent: { items: store.get('cache.recent', []), error: null, loaded: false },
+      watchlist: { items: store.get('cache.watchlist', []), error: null, loaded: false },
     },
   };
 
@@ -133,6 +135,20 @@
     }).filter(Boolean);
   }
 
+  // Recently used apps and inputs, as tiles of their own: "used:" keys keep them apart from the
+  // same app's tile in another row, and they open but don't edit.
+  function usedItems() {
+    const out = [];
+    state.used.forEach((id) => {
+      if (out.length >= 6 || id === SELF_ID) return;
+      const app = apps.filter((a) => a.id === id && shown(a))[0];
+      if (app) out.push({ key: 'used:' + app.key, kind: 'app', app: app, used: true });
+      const input = inputs.filter((i) => i.appId === id)[0];
+      if (input) out.push({ key: 'used:input:' + input.id, kind: 'input', input: input, used: true });
+    });
+    return out;
+  }
+
   function favoriteKey(item) {
     return item.kind === 'app' ? item.app.key : item.key;
   }
@@ -169,8 +185,11 @@
     const sections = [];
     const favs = favoriteItems();
     if (favs.length) sections.push({ id: 'favorites', title: 'Favorites', scroll: true, big: true, items: favs });
+    const used = usedItems();
+    if (used.length) sections.push({ id: 'used', title: 'Recently Used', scroll: true, big: true, items: used });
     if (plex) {
       sections.push(plexSection('continue', 'Continue Watching', 'Nothing in progress'));
+      if (data.rooted) sections.push(plexSection('watchlist', 'Watchlist', 'Nothing saved'));
       sections.push(plexSection('recent', 'Recently Added', 'Nothing new'));
     }
     sections.push({ id: 'apps', title: favs.length ? 'All Apps' : 'Apps', items: gridApps().map(appItem) });
@@ -475,12 +494,12 @@
     const item = focusedItem();
     if (item && item.kind === 'app') {
       add('key-text', 'OK', 'Open');
-      add('key-yellow', '', 'Edit (or hold OK)');
+      if (!item.used) add('key-yellow', '', 'Edit (or hold OK)');
     } else if (item && item.kind === 'plex') {
       add('key-text', 'OK', 'Open ' + (plexApp() ? plexApp().title : 'Plex'));
     } else if (item) {
       add('key-text', 'OK', 'Switch input');
-      add('key-yellow', '', 'Edit (or hold OK)');
+      if (!item.used) add('key-yellow', '', 'Edit (or hold OK)');
     }
     if (state.hidden.length) add('key-green', '', state.showHidden ? 'Leave out hidden apps' : 'Show hidden apps');
     add('key-blue', '', 'Theme');
@@ -590,7 +609,7 @@
 
   function startEdit() {
     const item = focusedItem();
-    if (!item || (item.kind !== 'app' && item.kind !== 'input')) return;
+    if (!item || item.used || (item.kind !== 'app' && item.kind !== 'input')) return;
     state.editing = favoriteKey(item);
     render();
   }
@@ -868,7 +887,7 @@
 
   function onOkHold() {
     const item = focusedItem();
-    if (!state.editing && item && (item.kind === 'app' || item.kind === 'input')) startEdit();
+    if (!state.editing && item && !item.used && (item.kind === 'app' || item.kind === 'input')) startEdit();
     else onOkPress();
   }
 
@@ -953,6 +972,50 @@
     $('saver-date').textContent = date;
   }
 
+  // ---------------------------------------------------------------- Plex Watchlist
+
+  // Written to the TV by the computer's hourly sync (tools/watchlist.mjs); titles on the server
+  // carry its ratingKey, so they open in PlxNative like the other Plex cards.
+  function loadWatchlist() {
+    if (!plex || !data.rooted || !window.Luna.available()) return;
+    const row = state.plexRows.watchlist;
+    window.Luna.exec('cat /home/root/.config/minimal-launcher/watchlist.json').then((res) => {
+      row.items = (JSON.parse(res.stdoutString).items || []).map((w) => {
+        const onServer = !!w.ratingKey;
+        const image = onServer ? window.Plex.image(plex, w.art, 480, 270) : w.publicArt;
+        return {
+          title: w.title,
+          subtitle: onServer ? (w.year ? String(w.year) : '') : 'Not on your Plex server',
+          meta: '',
+          progress: 0,
+          image: image,
+          backdrop: onServer ? window.Plex.image(plex, w.art, 1920, 1080) : w.publicArt,
+          ratingKey: w.ratingKey,
+        };
+      });
+      row.loaded = true;
+      store.set('cache.watchlist', row.items);
+      render();
+    }, () => {
+      row.loaded = true;
+      render();
+    });
+  }
+
+  // ---------------------------------------------------------------- recently used
+
+  // The TV-side helper (tv/helper) writes which apps were on screen; read it when we show up.
+  function loadUsed() {
+    if (!data.rooted || !window.Luna.available()) return;
+    window.Luna.exec('cat /home/root/.config/minimal-launcher/recent.json').then((res) => {
+      const ids = (JSON.parse(res.stdoutString).apps || []).map((a) => a.id);
+      if (ids.join() === state.used.join()) return;
+      state.used = ids;
+      store.set('used', ids);
+      render();
+    }, () => {});
+  }
+
   // ---------------------------------------------------------------- layout backup
 
   function layoutNow() {
@@ -1029,6 +1092,8 @@
       render();
     }, () => {});
     restoreLayout();
+    loadUsed();
+    loadWatchlist();
 
     loadPlex();
     loadWeather();
@@ -1043,6 +1108,8 @@
         return;
       }
       tick();
+      loadUsed();
+      loadWatchlist();
       loadPlex();
       loadWeather();
       resetIdle();

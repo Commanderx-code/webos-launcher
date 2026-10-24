@@ -86,5 +86,5 @@ window.Plex = (function () {
       .then((json) => ((json.MediaContainer && json.MediaContainer.Metadata) || []).map((m) => toItem(cfg, m)));
   }
 
-  return { continueWatching: continueWatching, recentlyAdded: recentlyAdded };
+  return { continueWatching: continueWatching, recentlyAdded: recentlyAdded, image: image };
 })();
