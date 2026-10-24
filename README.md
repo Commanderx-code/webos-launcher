@@ -4,7 +4,8 @@ A minimal home screen for LG webOS TVs, made for a stock TV in Developer Mode (w
 
 - **Weather and clock** in the corner
 - **Favorites**: a row of big tiles for the apps you use most
-- **Continue Watching** and **Recently Added** from your Plex server
+- **Recently Used**: your last few apps and inputs, wherever you opened them (rooted TVs)
+- **Continue Watching**, **Watchlist** (rooted TVs) and **Recently Added** from your Plex server
 - **All Apps**: everything else, which you can rearrange and hide
 - **Inputs**: only the ones with something plugged in, named after the device when it says what it is
 - **Themes**: **Ambient** (the focused app's color glows behind the grid), **Aurora** (slowly drifting colors), **Midnight** (plain dark) and **Wallpaper** (your own picture or looping video)
@@ -156,11 +157,20 @@ npm run install-ipk -- some-app.ipk                # any other webOS package
 `tv/init.d/` holds startup hooks for a rooted TV; `npm run tv-setup` copies them to `/var/lib/webosbrew/init.d/` and starts them, and installs `tv/bin/` and Input Hook's keybinds. The Homebrew Channel runs the hooks at every boot.
 
 - `20-close-devtools-port`: closes the debug port (below).
+- `40-launcher-helper`: starts `tv/helper/helper.js` (Node, root), which records which apps are on screen for the Recently Used row (`/home/root/.config/minimal-launcher/recent.json`) and serves the phone remote (below).
 - `30-launcher-on-wake`: opens the launcher when the TV is turned on with the remote (the TV reports why it turned on: `getPowerOnReason` says `remoteKey`), and for 20 seconds takes the screen back if a device woken with the TV grabs it over HDMI-CEC. When something else turned the TV on, such as a console over HDMI-CEC, it stays where that put it. Its log is `/run/minimal-launcher/launcher-on-wake.log`; `30-launcher-on-wake states` prints power states as they change.
 
 ### Commercial mute
 
 `tv/bin/commercial-mute` toggles the TV's mute: muting starts a 2½-minute timer that unmutes it again, and a press while muted unmutes at once. It uses `com.webos.service.audio/master/muteVolume`, the mute the remote's button toggles (`com.webos.audio` has a separate one). Input Hook swallows a key it runs a command for, and kills what the command leaves behind, so the timer runs detached with `setsid`. `tv/lginputhook/keybinds.json` puts it on the remote's Mute button (code 113), next to Home → launcher (773) and 1 → LG's home bar (2). `npm run tv-setup` installs both. To change the length, edit the `150` in the keybinds file.
+
+### Phone remote
+
+The helper serves a remote control page on port 8765 for phones on the home network: a D-pad with OK and Back, Home (the launcher), LG's home bar, volume, the commercial mute, play controls, power off (with a second tap), and your apps and inputs. Buttons go through the TV's own network remote service, using the client key the computer was approved with. `npm run tv-setup` prints a private link (`http://<tv>:8765/?k=…`): opening it once on a phone saves the key in a cookie, and the page refuses anyone without it.
+
+### Plex Watchlist
+
+The hourly sync reads your Watchlist from plex.tv, matches each title on your server, and writes the list to `/home/root/.config/minimal-launcher/watchlist.json` on the TV, so a Watchlist change doesn't need a reinstall. Titles on the server open their page in PlxNative; the rest are marked as not on it.
 
 ### Layout backup
 

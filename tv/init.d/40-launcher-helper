@@ -1,0 +1,36 @@
+#!/bin/sh
+# Starts the launcher's helper (tv/helper/helper.js): it records which apps are on screen for the
+# Recently Used row and serves the phone remote page on port 8765. The Homebrew Channel runs this
+# at boot.
+#
+#   40-launcher-helper         start it (what the Homebrew Channel does)
+#   40-launcher-helper stop    stop it
+#
+# Its log is /run/minimal-launcher/launcher-helper.log.
+
+HELPER=/home/root/minimal-launcher/helper/helper.js
+# /run, not /tmp: only root can write there.
+RUN=/run/minimal-launcher
+LOG=$RUN/launcher-helper.log
+PIDFILE=$RUN/launcher-helper.pid
+
+# Whether the pid file names a live helper (and not some other process).
+running() {
+  pid=$(cat "$PIDFILE" 2>/dev/null)
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  grep -q "launcher-helper\|helper.js" "/proc/$pid/cmdline" 2>/dev/null
+}
+
+case "$1" in
+  stop)
+    # setsid made it a process group leader: end the group, its app tracker included.
+    if running; then kill -- "-$(cat "$PIDFILE")"; fi
+    rm -f "$PIDFILE"
+    ;;
+  *)
+    mkdir -p "$RUN" && chmod 700 "$RUN"
+    if running; then exit 0; fi
+    setsid /usr/bin/node "$HELPER" >> "$LOG" 2>&1 < /dev/null &
+    echo $! > "$PIDFILE"
+    ;;
+esac

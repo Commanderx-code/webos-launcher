@@ -57,6 +57,13 @@ export function readRemote(file, config = readConfig()) {
   return res.status === 0 ? res.stdout : null;
 }
 
+// Writes a file on the TV, replacing it in one step.
+export function writeRemote(file, text, config = readConfig()) {
+  const res = spawnSync('ssh', [...sshOptions(), target(config), `cat > '${file}.tmp' && mv '${file}.tmp' '${file}'`],
+    { input: text, encoding: 'utf8', timeout: 20000 });
+  return res.status === 0;
+}
+
 export function launchApp(id, config = readConfig()) {
   const res = spawnSync('ssh', ['-tt', ...sshOptions(), target(config),
     `luna-send -n 1 'luna://com.webos.applicationManager/launch' '${JSON.stringify({ id })}'`], { encoding: 'utf8' });
