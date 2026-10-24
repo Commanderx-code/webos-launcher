@@ -1,28 +1,41 @@
 #!/bin/sh
-# Runs on each press of the remote's Mute button (via LG Input Hook), alongside the TV's own
-# mute, which still happens. If the press muted the TV, this unmutes it again after a commercial
-# break's length; if the press unmuted it, this cancels that pending unmute.
+# The remote's Mute button, via LG Input Hook (which swallows the key when it runs a command):
+# mutes the TV and unmutes it again after a commercial break's length; pressed while muted,
+# it unmutes right away.
 #
 #   commercial-mute [seconds]   default 150 (2½ minutes)
+#   commercial-mute --unmute-after SECONDS   the timer, run detached by the line above
 
-SECONDS_MUTED=${1:-150}
 # /run, not /tmp: only root can write there (see 30-launcher-on-wake).
 RUN=/run/minimal-launcher
 PIDFILE=$RUN/commercial-mute.pid
-
-mkdir -p "$RUN" && chmod 700 "$RUN"
 
 # luna-send only answers with a terminal attached; script(1) gives it one.
 luna() {
   script -q -c "luna-send -n 1 $1 '$2'" /dev/null < /dev/null | tr -d '\r'
 }
 
-# The mute the remote's button toggles (com.webos.audio has a separate one that it doesn't).
+# The mute the remote's own button toggles (com.webos.audio has a separate one).
 muted() {
   luna luna://com.webos.service.audio/master/getVolume '{}' | grep -q '"muteStatus": *true'
 }
 
-# Cancel a pending unmute from an earlier press, if the pid file names a live copy of this script.
+set_muted() {
+  luna luna://com.webos.service.audio/master/muteVolume "{\"mute\":$1}" > /dev/null
+}
+
+if [ "$1" = --unmute-after ]; then
+  echo $$ > "$PIDFILE"
+  sleep "$2"
+  rm -f "$PIDFILE"
+  muted && set_muted false
+  exit 0
+fi
+
+SECONDS_MUTED=${1:-150}
+mkdir -p "$RUN" && chmod 700 "$RUN"
+
+# Cancel a pending unmute from an earlier press, if the pid file names a live timer of ours.
 pid=$(cat "$PIDFILE" 2>/dev/null)
 case "$pid" in
   ''|*[!0-9]*) ;;
@@ -30,13 +43,10 @@ case "$pid" in
 esac
 rm -f "$PIDFILE"
 
-# Give the TV a moment to act on the key itself.
-sleep 1
-muted || exit 0
-
-(
-  sleep "$SECONDS_MUTED"
-  muted && luna luna://com.webos.service.audio/master/muteVolume '{"mute":false}' > /dev/null
-  rm -f "$PIDFILE"
-) > /dev/null 2>&1 < /dev/null &
-echo $! > "$PIDFILE"
+if muted; then
+  set_muted false
+else
+  set_muted true
+  # Detached into its own session, so it outlives whatever ran this (Input Hook cleans up after).
+  setsid "$0" --unmute-after "$SECONDS_MUTED" > /dev/null 2>&1 < /dev/null &
+fi
