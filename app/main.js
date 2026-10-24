@@ -258,7 +258,16 @@
     } else {
       title = item.input.title;
       box.classList.add('tile-input');
-      box.innerHTML = HDMI_GLYPH;
+      if (item.input.bgColor) box.style.backgroundColor = item.input.bgColor;
+      if (item.input.icon) {
+        const img = el('img');
+        img.src = item.input.icon;
+        img.alt = '';
+        img.onerror = () => { box.innerHTML = HDMI_GLYPH; };
+        box.appendChild(img);
+      } else {
+        box.innerHTML = HDMI_GLYPH;
+      }
       if (item.key === state.editing) {
         tile.classList.add('editing');
         box.appendChild(el('span', 'tile-badge tile-badge-edit', 'Editing'));

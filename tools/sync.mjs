@@ -8,7 +8,8 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DATA_DIR, ROOT, readAppInfo, readConfig, requireTvHost, writeConfig, writePrivate } from './config.mjs';
-import { prepareScreensaver } from './media.mjs';
+import { expandHome, prepareScreensaver } from './media.mjs';
+import { spawnSync } from 'node:child_process';
 
 const ICON_DIR = path.join(DATA_DIR, 'icons');
 const VIDEO_EXTS = ['.mp4', '.webm', '.mov', '.m4v'];
@@ -142,6 +143,39 @@ export async function runSync() {
       if (d.connected === false && !config.showAllInputs) continue;
       const cec = (d.subList || []).map((s) => s.osdName).filter(Boolean)[0];
       inputs.push({ id: d.id, title: names[d.id] || cec || d.label || d.id, appId: d.appId });
+    }
+
+    // Your own tile looks from config.json "tiles", keyed by app name or ID, or input ID or name:
+    // a background color, a picture for the icon (trimmed of plain margins), and removeBackground
+    // to make the icon's plain border see-through, for icons that come on a solid square.
+    for (const [name, look] of Object.entries(config.tiles || {})) {
+      const lower = name.toLowerCase();
+      const targets = [
+        ...apps.filter((a) => [a.id, a.key, a.title].some((v) => String(v).toLowerCase() === lower)),
+        ...inputs.filter((i) => [i.id, i.title].some((v) => String(v).toLowerCase() === lower)),
+      ];
+      if (!targets.length) {
+        console.warn(`tiles: nothing on the TV is called "${name}".`);
+        continue;
+      }
+      let icon = null;
+      const current = targets[0].icon && path.join(DATA_DIR, targets[0].icon.replace(/^data\//, ''));
+      if (look.icon || (look.removeBackground && current)) {
+        const src = look.icon ? expandHome(look.icon) : current;
+        const file = `tile-${name.replace(/[^a-z0-9._-]/gi, '_')}.png`;
+        // Flood-fill from each corner, so only the border goes, not white inside the logo.
+        const knockout = look.removeBackground
+          ? ['-alpha', 'set', '-fuzz', '12%', '-fill', 'none', '-draw', 'color 0,0 floodfill', '-draw', 'color %[fx:w-1],0 floodfill',
+            '-draw', 'color 0,%[fx:h-1] floodfill', '-draw', 'color %[fx:w-1],%[fx:h-1] floodfill']
+          : [];
+        const res = spawnSync('magick', [src + '[0]', ...knockout, '-trim', '+repage', '-resize', '400x400>', path.join(ICON_DIR, file)], { encoding: 'utf8' });
+        if (res.status === 0) icon = `data/icons/${file}`;
+        else console.warn(`tiles: couldn't use ${src}: ${(res.stderr || res.error || '').toString().trim()}`);
+      }
+      for (const t of targets) {
+        if (look.bgColor) t.bgColor = look.bgColor;
+        if (icon) t.icon = icon;
+      }
     }
 
     let plex = null;
