@@ -62,7 +62,7 @@
     hidden: store.get('hidden', []),
     favorites: store.get('favorites', data.favorites || []),
     showHidden: false,
-    editing: null,   // key of the app being moved
+    editing: null,   // app key, or "input:<id>" for an input, of the tile being edited
     focus: null,     // key of the focused item, e.g. "app:netflix" or "continue:2"
     // config.json can set the starting theme; the blue button's choice wins after that.
     theme: store.get('theme', data.theme || THEMES[0].id),
@@ -109,8 +109,26 @@
     return state.showHidden || !isHidden(app) || app.key === state.editing;
   }
 
-  function favoriteApps() {
-    return state.favorites.map(appByKey).filter((a) => a && shown(a));
+  function inputByKey(key) {
+    return key.indexOf('input:') === 0 ? inputs.filter((i) => 'input:' + i.id === key)[0] || null : null;
+  }
+
+  function inputItem(i) {
+    return { key: 'input:' + i.id, kind: 'input', input: i };
+  }
+
+  // Favorites hold app keys, plus "input:<id>" for inputs pinned there.
+  function favoriteItems() {
+    return state.favorites.map((key) => {
+      const input = inputByKey(key);
+      if (input) return inputItem(input);
+      const app = appByKey(key);
+      return app && shown(app) ? appItem(app) : null;
+    }).filter(Boolean);
+  }
+
+  function favoriteKey(item) {
+    return item.kind === 'app' ? item.app.key : item.key;
   }
 
   function gridApps() {
@@ -143,14 +161,14 @@
 
   function layout() {
     const sections = [];
-    const favs = favoriteApps();
-    if (favs.length) sections.push({ id: 'favorites', title: 'Favorites', scroll: true, big: true, items: favs.map(appItem) });
+    const favs = favoriteItems();
+    if (favs.length) sections.push({ id: 'favorites', title: 'Favorites', scroll: true, big: true, items: favs });
     if (plex) {
       sections.push(plexSection('continue', 'Continue Watching', 'Nothing in progress'));
       sections.push(plexSection('recent', 'Recently Added', 'Nothing new'));
     }
     sections.push({ id: 'apps', title: favs.length ? 'All Apps' : 'Apps', items: gridApps().map(appItem) });
-    sections.push({ id: 'inputs', title: 'Inputs', items: inputs.map((i) => ({ key: 'input:' + i.id, kind: 'input', input: i })) });
+    sections.push({ id: 'inputs', title: 'Inputs', items: inputs.filter((i) => state.favorites.indexOf('input:' + i.id) === -1).map(inputItem) });
 
     const rows = [];
     sections.forEach((s) => {
@@ -241,6 +259,10 @@
       title = item.input.title;
       box.classList.add('tile-input');
       box.innerHTML = HDMI_GLYPH;
+      if (item.key === state.editing) {
+        tile.classList.add('editing');
+        box.appendChild(el('span', 'tile-badge tile-badge-edit', 'Editing'));
+      }
     }
 
     tile.appendChild(box);
@@ -427,9 +449,11 @@
 
     if (state.editing) {
       const app = appByKey(state.editing);
-      add('key-text', isFavorite(app) ? '◀ ▶' : '◀ ▶ ▲ ▼', 'Move');
-      add('key-green', '', isFavorite(app) ? 'Remove from Favorites' : 'Add to Favorites');
-      add('key-red', '', isHidden(app) ? 'Unhide' : 'Hide');
+      const fav = state.favorites.indexOf(state.editing) !== -1;
+      if (fav) add('key-text', '◀ ▶', 'Move');
+      else if (app) add('key-text', '◀ ▶ ▲ ▼', 'Move');
+      add('key-green', '', fav ? 'Remove from Favorites' : 'Add to Favorites');
+      if (app) add('key-red', '', isHidden(app) ? 'Unhide' : 'Hide');
       add('key-text', 'OK', 'Done');
       return;
     }
@@ -441,6 +465,7 @@
       add('key-text', 'OK', 'Open ' + (plexApp() ? plexApp().title : 'Plex'));
     } else if (item) {
       add('key-text', 'OK', 'Switch input');
+      add('key-yellow', '', 'Edit (or hold OK)');
     }
     if (state.hidden.length) add('key-green', '', state.showHidden ? 'Leave out hidden apps' : 'Show hidden apps');
     add('key-blue', '', 'Theme');
@@ -525,8 +550,8 @@
 
   function startEdit() {
     const item = focusedItem();
-    if (!item || item.kind !== 'app') return;
-    state.editing = item.app.key;
+    if (!item || (item.kind !== 'app' && item.kind !== 'input')) return;
+    state.editing = favoriteKey(item);
     render();
   }
 
@@ -541,20 +566,22 @@
   }
 
   function moveEditing(dx, dy) {
-    const app = appByKey(state.editing);
-    if (isFavorite(app)) {
+    const key = state.editing;
+    if (state.favorites.indexOf(key) !== -1) {
       // Favorites are one row: only sideways moves.
       if (!dx) return;
-      const shownKeys = favoriteApps().map((a) => a.key);
-      const other = shownKeys[shownKeys.indexOf(app.key) + dx];
+      const shownKeys = favoriteItems().map(favoriteKey);
+      const other = shownKeys[shownKeys.indexOf(key) + dx];
       if (!other) return;
       const list = state.favorites.slice();
-      list[list.indexOf(app.key)] = other;
-      list[state.favorites.indexOf(other)] = app.key;
+      list[list.indexOf(key)] = other;
+      list[state.favorites.indexOf(other)] = key;
       saveFavorites(list);
       render();
       return;
     }
+    // Inputs keep the TV's order outside Favorites.
+    if (!appByKey(key)) return;
 
     const visible = gridApps();
     const from = visible.map((a) => a.key).indexOf(state.editing);
@@ -586,6 +613,7 @@
   }
 
   function toggleHidden(key) {
+    if (!appByKey(key)) return;
     const i = state.hidden.indexOf(key);
     if (i === -1) state.hidden.push(key);
     else state.hidden.splice(i, 1);
@@ -800,7 +828,7 @@
 
   function onOkHold() {
     const item = focusedItem();
-    if (!state.editing && item && item.kind === 'app') startEdit();
+    if (!state.editing && item && (item.kind === 'app' || item.kind === 'input')) startEdit();
     else onOkPress();
   }
 
