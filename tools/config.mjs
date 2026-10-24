@@ -63,6 +63,7 @@ function filesUnder(dir) {
 export function dataSignature() {
   const hash = createHash('sha256');
   for (const file of filesUnder(APP_DIR)) {
+    if (file === path.join(DATA_DIR, 'layout.js')) continue;
     let content = readFileSync(file);
     if (file === path.join(DATA_DIR, 'data.js')) content = content.toString().replace(/"generatedAt": "[^"]*",?/, '');
     hash.update(path.relative(APP_DIR, file)).update('\0').update(content).update('\0');

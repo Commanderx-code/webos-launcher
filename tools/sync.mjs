@@ -4,11 +4,12 @@
 import LGTV from 'lgtv2';
 import http from 'node:http';
 import https from 'node:https';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DATA_DIR, ROOT, readAppInfo, readConfig, requireTvHost, writeConfig, writePrivate } from './config.mjs';
 import { expandHome, prepareScreensaver } from './media.mjs';
+import { isRooted, readRemote } from './tv-root.mjs';
 import { spawnSync } from 'node:child_process';
 
 const ICON_DIR = path.join(DATA_DIR, 'icons');
@@ -168,7 +169,9 @@ export async function runSync() {
           ? ['-alpha', 'set', '-fuzz', '12%', '-fill', 'none', '-draw', 'color 0,0 floodfill', '-draw', 'color %[fx:w-1],0 floodfill',
             '-draw', 'color 0,%[fx:h-1] floodfill', '-draw', 'color %[fx:w-1],%[fx:h-1] floodfill']
           : [];
-        const res = spawnSync('magick', [src + '[0]', ...knockout, '-trim', '+repage', '-resize', '400x400>', path.join(ICON_DIR, file)], { encoding: 'utf8' });
+        // No date stamps in the PNG, so an unchanged tile hashes the same and doesn't trigger a reinstall.
+        const res = spawnSync('magick', [src + '[0]', ...knockout, '-trim', '+repage', '-resize', '400x400>',
+          '-define', 'png:exclude-chunks=date,time', path.join(ICON_DIR, file)], { encoding: 'utf8' });
         if (res.status === 0) icon = `data/icons/${file}`;
         else console.warn(`tiles: couldn't use ${src}: ${(res.stderr || res.error || '').toString().trim()}`);
       }
@@ -188,7 +191,38 @@ export async function runSync() {
         appId: config.plex.appId || (found && found.id) || 'cdp-30',
       };
       if (!found && !config.plex.appId) console.warn('Plex isn\'t installed on the TV; its tile will be missing.');
+      // The server's ID, for apps that open a given title on it (PlxNative). Saved once found.
+      if (!config.plex.machineId) {
+        try {
+          const res = await fetch(`${config.plex.server}/identity`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
+          config.plex.machineId = (await res.json()).MediaContainer.machineIdentifier;
+          writeConfig(config);
+        } catch (err) {
+          console.warn(`Couldn't read the Plex server's ID: ${err.message}`);
+        }
+      }
+      if (config.plex.machineId) plex.machineId = config.plex.machineId;
     }
+
+    // The layout the launcher backs up on a rooted TV, kept here too and packaged for a fresh
+    // install. It's left out of the install fingerprint, so a layout change alone doesn't reinstall.
+    const rooted = isRooted(config);
+    if (rooted) {
+      const text = readRemote('/home/root/.config/minimal-launcher/layout.json', config);
+      let layout = null;
+      try {
+        layout = text && JSON.parse(text);
+      } catch {
+        console.warn('The layout backup on the TV is unreadable; keeping the previous copy.');
+      }
+      if (layout) {
+        mkdirSync(path.join(ROOT, 'backup'), { recursive: true });
+        writeFileSync(path.join(ROOT, 'backup', 'layout.json'), JSON.stringify(layout, null, 2) + '\n');
+      }
+    }
+    const backup = path.join(ROOT, 'backup', 'layout.json');
+    writeFileSync(path.join(DATA_DIR, 'layout.js'), '// Written by `npm run sync` from the TV\'s layout backup.\n' +
+      `window.LAUNCHER_LAYOUT = ${existsSync(backup) ? readFileSync(backup, 'utf8').trim() : 'null'};\n`);
 
     const data = {
       generatedAt: new Date().toISOString(),
@@ -199,6 +233,8 @@ export async function runSync() {
       weather: await locate(config),
       wallpaper: wallpaperFrom(config),
       theme: config.theme || null,
+      rooted,
+      exclude: config.exclude || [],
       screensaverMinutes: config.screensaverMinutes == null ? 5 : config.screensaverMinutes,
       // Your own pictures and videos for the screensaver; without them it shows Plex artwork.
       screensaver: prepareScreensaver(config.screensaverFolder),
