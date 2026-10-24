@@ -18,8 +18,8 @@ There's no build step. The app is plain HTML, CSS and JavaScript in `app/`, writ
 | --- | --- | --- |
 | Arrows | Move around | Move the app (Favorites: left and right) |
 | OK | Open the app, switch input, or open Plex from a Plex card | Done |
-| Hold OK or Yellow | Edit the app | Done |
-| Green | Show hidden apps, or leave them out again | Add to or remove from Favorites |
+| Hold OK or Yellow | Edit the app or input | Done |
+| Green | Show hidden apps, or leave them out again | Add to or remove from Favorites (inputs too) |
 | Red | | Hide or unhide |
 | Blue | Next theme | |
 | Back | Leave out hidden apps again | Done |
