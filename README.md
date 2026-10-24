@@ -140,6 +140,14 @@ npm run install-ipk -- some-app.ipk                # any other webOS package
 
 `root-ssh` logs in with the Homebrew Channel's default password the first time and installs the key. After the next restart the TV only accepts the key. It also sets `tv.root` in `config.json`, which makes `deploy`, `install-ipk` and the hourly updater use `scp` and the TV's installer service (`luna-send`) over SSH. LG's `ares-install` doesn't work here because the Homebrew Channel's SSH server refuses the second command it sends.
 
+### Closing the debug port
+
+webOS opens the web app manager's remote debugging port (9998) on every network interface. On a rooted TV it lets anyone on the network script the Homebrew Channel, which has root. The kernel has no firewall, so a startup hook in `/var/lib/webosbrew/init.d/20-close-devtools-port` bind-mounts a copy of `/etc/systemd/system/scripts/webapp-mgr.sh` without `--remote-debugging-port` and restarts the web app manager. (`--remote-debugging-address=127.0.0.1` was tried first; the web app manager ignores it.) To reopen the port for debugging until the next restart:
+
+```sh
+umount /etc/systemd/system/scripts/webapp-mgr.sh && systemctl restart webapp-mgr
+```
+
 ### Home button
 
 [LG Input Hook](https://github.com/Simon34545/lginputhook), a root-only app from the Homebrew Channel, can make the remote's Home button open the launcher. Install it, open it once (that starts it, and it then starts itself at boot), and put this in `/home/root/.config/lginputhook/keybinds.json` on the TV:
