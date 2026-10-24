@@ -19,6 +19,7 @@
   "devDependencies": {
     "@webos-tools/cli": "^3.2.6",
     "lgtv2": "^2.1.0",
+    "simple-icons": "^13.21.0",
     "ssh2": "^1.17.0"
   }
 }

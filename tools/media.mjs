@@ -47,8 +47,54 @@ export function convert(src) {
   return { file: out, video };
 }
 
-// Copies the folder's pictures and videos into app/data/saver for the screensaver.
-export function prepareScreensaver(folder) {
+// A name for a file without one in config.json: "Dark-lords-castle.jpeg" becomes "Dark lords castle".
+function nameFrom(file) {
+  const base = path.basename(file, path.extname(file)).replace(/[-_]+/g, ' ').trim();
+  return base.charAt(0).toUpperCase() + base.slice(1);
+}
+
+// A video that's already H.264 at 1080p or less goes to the TV as it is, since converting it
+// again would only lose quality. Everything else is converted.
+function forTv(src) {
+  if (VIDEO_EXTS.includes(path.extname(src).toLowerCase())) {
+    const res = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=codec_name,height',
+      '-of', 'csv=p=0', src], { encoding: 'utf8' });
+    const [codec, height] = (res.stdout || '').trim().split(',');
+    if (codec === 'h264' && Number(height) <= 1080) return { file: src, video: true };
+  }
+  return convert(src);
+}
+
+// Copies the wallpapers into app/data/wallpapers. Each is { name, file } in config.json and
+// becomes a theme of its own.
+export function prepareWallpapers(list) {
+  const dest = path.join(DATA_DIR, 'wallpapers');
+  rmSync(dest, { recursive: true, force: true });
+  const out = [];
+  list.forEach((w) => {
+    const src = expandHome(w.file);
+    const name = w.name || nameFrom(src);
+    const slug = name.toLowerCase().replace(/'/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'wallpaper';
+    if (!existsSync(src)) {
+      console.warn(`Wallpaper ${src} not found; leaving ${name} out.`);
+      return;
+    }
+    try {
+      const { file, video } = forTv(src);
+      const id = out.some((o) => o.id === 'wall-' + slug) ? 'wall-' + slug + '-' + out.length : 'wall-' + slug;
+      mkdirSync(dest, { recursive: true });
+      copyFileSync(file, path.join(dest, id + path.extname(file)));
+      out.push({ id, name, src: `data/wallpapers/${id}${path.extname(file)}`, video });
+    } catch (err) {
+      console.warn(`  skipped wallpaper ${name}: ${err.message}`);
+    }
+  });
+  return out.length ? out : null;
+}
+
+// Copies the folder's pictures and videos into app/data/saver for the screensaver. names maps
+// a file name to the name shown in the sidebar's screensaver picker.
+export function prepareScreensaver(folder, names = {}) {
   const dest = path.join(DATA_DIR, 'saver');
   rmSync(dest, { recursive: true, force: true });
   if (!folder) return null;
@@ -67,7 +113,7 @@ export function prepareScreensaver(folder) {
       const { file, video } = convert(path.join(dir, f));
       const name = `${String(i + 1).padStart(2, '0')}${path.extname(file)}`;
       copyFileSync(file, path.join(dest, name));
-      slides.push({ src: `data/saver/${name}`, video });
+      slides.push({ id: f, name: names[f] || nameFrom(f), src: `data/saver/${name}`, video });
     } catch (err) {
       console.warn(`  skipped ${f}: ${err.message}`);
     }

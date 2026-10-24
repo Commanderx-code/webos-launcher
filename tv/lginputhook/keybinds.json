@@ -1,5 +1,7 @@
 {
   "773": {"action": "launch", "id": "com.minimal.launcher"},
+  "174": {"action": "launch", "id": "com.minimal.launcher"},
   "2": {"action": "launch", "id": "com.webos.app.home"},
+  "1038": {"action": "exec", "command": "/home/root/minimal-launcher/bin/launcher-sidebar"},
   "113": {"action": "exec", "command": "/home/root/minimal-launcher/bin/commercial-mute 150"}
 }

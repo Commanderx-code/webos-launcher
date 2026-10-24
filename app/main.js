@@ -27,7 +27,9 @@
   const inputs = data.inputs && data.inputs.length ? data.inputs : DEFAULT_INPUTS;
   const plex = data.plex && data.plex.server && data.plex.token ? data.plex : null;
   const weatherCfg = data.weather && data.weather.latitude != null ? data.weather : null;
-  const wallpaper = typeof data.wallpaper === 'string' ? { src: data.wallpaper, video: false } : data.wallpaper;
+  // Each wallpaper is a theme of its own. data.js from before named wallpapers had just one.
+  const wallpapers = data.wallpapers ||
+    (data.wallpaper ? [Object.assign({ id: 'photo', name: 'Wallpaper', video: false }, typeof data.wallpaper === 'string' ? { src: data.wallpaper } : data.wallpaper)] : []);
   // Minutes without a button press before the screensaver starts; 0 turns it off. The sidebar's
   // setting wins over config.json's.
   function saverMinutes() {
@@ -40,8 +42,37 @@
     { id: 'ambient', name: 'Ambient' },
     { id: 'aurora', name: 'Aurora' },
     { id: 'midnight', name: 'Midnight' },
+    { id: 'ocean', name: 'Ocean' },
+    { id: 'sunset', name: 'Sunset' },
+    { id: 'space', name: 'Starry space' },
   ];
-  if (wallpaper) THEMES.push({ id: 'photo', name: 'Wallpaper' });
+  wallpapers.forEach((w) => THEMES.push({ id: w.id, name: w.name }));
+  // "photo" was the one wallpaper's theme; it's now the first wallpaper.
+  function oldTheme(id) {
+    return id === 'photo' && wallpapers.length ? wallpapers[0].id : id;
+  }
+  function wallpaperFor(id) {
+    return wallpapers.filter((w) => w.id === id)[0] || null;
+  }
+  // Tile looks, picked in the sidebar apart from the theme: the apps' own icons, or glass tiles
+  // with each logo in one color.
+  const ICON_STYLES = [
+    { id: 'standard', name: 'Standard' },
+    { id: 'white', name: 'Glass, white', glass: true },
+    { id: 'brand', name: 'Glass, brand colors', glass: true },
+    { id: 'ice', name: 'Glass, ice blue', glass: true },
+  ];
+  // The glass's own color, also picked in the sidebar.
+  const GLASS_TINTS = [
+    { id: 'clear', name: 'Clear', color: 'rgba(20, 22, 30, 0.28)' },
+    { id: 'smoke', name: 'Smoke', color: 'rgba(0, 0, 0, 0.55)' },
+    { id: 'blue', name: 'Blue', color: 'rgba(40, 95, 210, 0.34)' },
+    { id: 'purple', name: 'Purple', color: 'rgba(125, 60, 210, 0.34)' },
+    { id: 'pink', name: 'Pink', color: 'rgba(225, 60, 150, 0.32)' },
+    { id: 'red', name: 'Red', color: 'rgba(205, 30, 45, 0.34)' },
+    { id: 'green', name: 'Green', color: 'rgba(25, 160, 110, 0.32)' },
+    { id: 'gold', name: 'Gold', color: 'rgba(205, 150, 40, 0.32)' },
+  ];
   const AMBIENT_FALLBACK = 'hsl(222, 30%, 24%)';
 
   // Order, hidden apps, Favorites and theme are kept in localStorage. A fresh install (nothing
@@ -79,7 +110,7 @@
     editing: null,   // app key, or "input:<id>" for an input, of the tile being edited
     focus: null,     // key of the focused item, e.g. "app:netflix" or "continue:2"
     // config.json can set the starting theme; the blue button's choice wins after that.
-    theme: store.get('theme', packagedLayout.theme || data.theme || THEMES[0].id),
+    theme: oldTheme(store.get('theme', packagedLayout.theme || data.theme || THEMES[0].id)),
     rowIndex: {},    // where focus last was in each scrolling row, to land there again
     weather: null,
     plexRows: {
@@ -261,6 +292,19 @@
     });
   }
 
+  // The logo as a one-color silhouette (white, brand color and ice blue), shown instead of the
+  // icon by the glass icon styles.
+  function addGlassIcon(box, glass) {
+    if (!glass || !glass.brand) return;
+    ['white', 'brand', 'ice'].forEach((kind) => {
+      const img = el('img', 'tile-mono mono-' + kind);
+      img.src = glass[kind];
+      img.alt = '';
+      box.appendChild(img);
+    });
+    box.classList.add('has-mono');
+  }
+
   function renderTile(item, big) {
     const tile = el('div', big ? 'tile tile-big' : 'tile');
     tile.dataset.key = item.key;
@@ -271,6 +315,7 @@
       const app = item.app;
       title = app.title;
       if (app.bgColor) box.style.backgroundColor = app.bgColor;
+      addGlassIcon(box, app.glass);
       if (app.icon) {
         const img = el('img');
         img.src = app.icon;
@@ -292,6 +337,7 @@
       title = item.input.title;
       box.classList.add('tile-input');
       if (item.input.bgColor) box.style.backgroundColor = item.input.bgColor;
+      addGlassIcon(box, item.input.glass);
       if (item.input.icon) {
         const img = el('img');
         img.src = item.input.icon;
@@ -424,15 +470,46 @@
 
   function applyTheme() {
     if (!THEMES.some((t) => t.id === state.theme)) state.theme = THEMES[0].id;
-    $('app').className = 'theme-' + state.theme;
+    const icons = iconStyle();
+    const app = $('app');
+    // Keeps the sidebar open when the theme changes from its menu.
+    const wallpaper = wallpaperFor(state.theme);
+    // Every wallpaper shares the theme-photo look.
+    app.className = 'theme-' + (wallpaper ? 'photo' : state.theme) + (window.Scenes.has(state.theme) ? ' painted' : '') +
+      (icons.glass ? ' glass glass-' + icons.id : '') + (app.classList.contains('sb-open') ? ' sb-open' : '');
+    app.style.setProperty('--glass-tint', glassTint().color);
     const backdrop = $('backdrop');
-    const photo = state.theme === 'photo' && wallpaper;
-    backdrop.style.backgroundImage = photo && !wallpaper.video ? 'url("' + wallpaper.src + '")' : '';
+
+    // A painted scene is built when its theme comes on and removed when it goes.
+    const scene = backdrop.querySelector('.scene');
+    if (!scene || scene.dataset.theme !== state.theme) {
+      if (scene) backdrop.removeChild(scene);
+      let next = null;
+      try {
+        next = window.Scenes.build(state.theme);
+      } catch (e) {
+        // A broken scene leaves the plain background rather than a broken launcher.
+      }
+      if (next) {
+        next.dataset.theme = state.theme;
+        backdrop.insertBefore(next, backdrop.firstChild);
+      }
+    }
+    backdrop.style.backgroundImage = wallpaper && !wallpaper.video ? 'url("' + wallpaper.src + '")' : '';
 
     // A video wallpaper plays only while its theme is on, so it isn't decoding in the background.
     let video = backdrop.querySelector('video');
-    if (photo && wallpaper.video && !video) {
+    if (video && !(wallpaper && wallpaper.video && video.dataset.src === wallpaper.src)) {
+      video.pause();
+      // Lets go of the TV's video decoder now rather than whenever the element is collected.
+      video.removeAttribute('src');
+      video.load();
+      backdrop.removeChild(video);
+      video = null;
+    }
+    if (wallpaper && wallpaper.video && !video) {
       video = el('video', 'wall-video');
+      video.dataset.src = wallpaper.src;
       video.muted = true;
       video.loop = true;
       video.autoplay = true;
@@ -441,18 +518,44 @@
       backdrop.insertBefore(video, backdrop.firstChild);
       const played = video.play();
       if (played && played.catch) played.catch(() => {});
-    } else if (!(photo && wallpaper.video) && video) {
-      video.pause();
-      backdrop.removeChild(video);
     }
+  }
+
+  function iconStyle() {
+    return ICON_STYLES.filter((t) => t.id === state.settings.icons)[0] || ICON_STYLES[0];
+  }
+
+  function setIcons(id) {
+    saveSetting('icons', id);
+    applyTheme();
+  }
+
+  function cycleIcons() {
+    const i = ICON_STYLES.indexOf(iconStyle());
+    const next = ICON_STYLES[(i + 1) % ICON_STYLES.length];
+    setIcons(next.id);
+    toast('Icons: ' + next.name);
+  }
+
+  function setGlassTint(id) {
+    saveSetting('glassTint', id);
+    applyTheme();
+  }
+
+  function glassTint() {
+    return GLASS_TINTS.filter((t) => t.id === state.settings.glassTint)[0] || GLASS_TINTS[0];
+  }
+
+  function setTheme(id) {
+    state.theme = id;
+    saveLayout('theme', id);
+    applyTheme();
   }
 
   function cycleTheme() {
     const i = THEMES.map((t) => t.id).indexOf(state.theme);
     const next = THEMES[(i + 1) % THEMES.length];
-    state.theme = next.id;
-    saveLayout('theme', next.id);
-    applyTheme();
+    setTheme(next.id);
     toast('Theme: ' + next.name);
   }
 
@@ -511,6 +614,7 @@
       if (!item.used) add('key-yellow', '', 'Edit (or hold OK)');
     }
     if (state.hidden.length) add('key-green', '', state.showHidden ? 'Leave out hidden apps' : 'Show hidden apps');
+    add('key-red', '', 'Icons');
     add('key-blue', '', 'Theme');
   }
 
@@ -738,8 +842,14 @@
 
   // ---------------------------------------------------------------- screensaver
 
-  const saver = { on: false, idle: null, timer: null, drift: null, deck: [], front: 0, lastVideo: false };
+  const saver = { on: false, idle: null, timer: null, drift: null, deck: [], front: 0, lastVideo: false, only: false };
   const ownSlides = data.screensaver && data.screensaver.length ? data.screensaver : null;
+  // The sidebar's screensaver picker: all of your own pictures and videos, or just one.
+  const SAVER_PICKS = ownSlides ? [{ id: 'all', name: 'All, shuffled' }].concat(ownSlides.map((sl) => ({ id: sl.id || sl.src, name: sl.name || sl.src }))) : [];
+
+  function saverPick() {
+    return SAVER_PICKS.filter((p) => p.id === state.settings.saverPick)[0] || SAVER_PICKS[0];
+  }
 
   function resetIdle() {
     clearTimeout(saver.idle);
@@ -747,7 +857,10 @@
   }
 
   function saverSlides() {
-    if (ownSlides) return ownSlides.map((s) => ({ src: s.src, video: s.video, caption: '' }));
+    if (ownSlides) {
+      const pick = saverPick().id;
+      return ownSlides.filter((s) => pick === 'all' || (s.id || s.src) === pick).map((s) => ({ src: s.src, video: s.video, caption: '' }));
+    }
     const out = [];
     [['continue', 'Continue Watching'], ['recent', 'Recently Added']].forEach((pair) => {
       state.plexRows[pair[0]].items.forEach((it) => {
@@ -796,7 +909,8 @@
       layers[1 - saver.front].classList.remove('show');
       hideSaverVideo();
       $('saver-caption').textContent = slide.caption;
-      saver.timer = setTimeout(nextSlide, SLIDE_MS);
+      // A screensaver of one picture just stays up.
+      if (!saver.only) saver.timer = setTimeout(nextSlide, SLIDE_MS);
     };
     img.onerror = () => {
       saver.timer = setTimeout(nextSlide, 1000);
@@ -814,8 +928,10 @@
       video.classList.add('show');
       Array.prototype.forEach.call(document.querySelectorAll('.saver-art'), (n) => n.classList.remove('show'));
       $('saver-caption').textContent = slide.caption;
-      // A short clip loops until a picture's worth of time has passed.
-      if (!(video.duration * 1000 >= SLIDE_MS)) {
+      // A short clip loops until a picture's worth of time has passed, and a screensaver of one
+      // video loops for good.
+      if (saver.only) video.loop = true;
+      else if (!(video.duration * 1000 >= SLIDE_MS)) {
         video.loop = true;
         saver.timer = setTimeout(nextSlide, SLIDE_MS);
       }
@@ -861,9 +977,11 @@
     saver.on = true;
     saver.deck = [];
     saver.lastVideo = false;
+    saver.only = saverSlides().length === 1;
     // One video at a time: the wallpaper rests while the screensaver runs.
     if (wallVideo()) wallVideo().pause();
     $('saver').classList.add('show');
+    window.Scenes.pause();
     driftSaverInfo();
     saver.drift = setInterval(driftSaverInfo, 30000);
     nextSlide();
@@ -874,6 +992,7 @@
     clearTimeout(saver.timer);
     clearInterval(saver.drift);
     $('saver').classList.remove('show');
+    window.Scenes.play();
     Array.prototype.forEach.call(document.querySelectorAll('.saver-art'), (n) => n.classList.remove('show'));
     const video = $('saver-video');
     video.classList.remove('show');
@@ -948,6 +1067,11 @@
       cycleTheme();
       return;
     }
+    // Red hides an app while editing; otherwise it switches the icons.
+    if ((k === KEY.RED || k === KEY.R) && !state.editing) {
+      cycleIcons();
+      return;
+    }
 
     if (state.editing) {
       if (dx || dy) moveEditing(dx, dy);
@@ -988,7 +1112,8 @@
   // A Roku-style menu that slides out from the left: inputs, launcher settings, the TV's HDMI
   // settings and system actions. Menus are functions, so values are current on every render.
   // stack holds the menus walked into, with the item each was opened from, to land back on it.
-  const sidebar = { open: false, stack: [], index: 0, armed: null, armedTimer: null, hdmi: null };
+  // dropdown: the index of the item whose drop-down is open, if any.
+  const sidebar = { open: false, stack: [], index: 0, armed: null, armedTimer: null, hdmi: null, dropdown: null };
 
   const SB_ICONS = {
     home: '<path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/>',
@@ -1088,7 +1213,11 @@
     return {
       title: 'Launcher settings',
       items: [
-        { label: 'Theme', value: theme ? theme.name : '', run: cycleTheme },
+        { label: 'Theme', value: theme ? theme.name : '', choices: THEMES, current: state.theme, pick: setTheme },
+        { label: 'Icons', value: iconStyle().name, choices: ICON_STYLES, current: iconStyle().id, pick: setIcons },
+      ].concat(iconStyle().glass ? [
+        { label: 'Glass color', value: glassTint().name, choices: GLASS_TINTS, current: glassTint().id, pick: setGlassTint },
+      ] : [], [
         {
           label: 'Screensaver',
           value: minutes ? 'After ' + minutes + ' min' : 'Off',
@@ -1098,6 +1227,10 @@
             resetIdle();
           },
         },
+      ], SAVER_PICKS.length > 2 ? [
+        { label: 'Screensaver shows', value: saverPick().name, choices: SAVER_PICKS, current: saverPick().id, pick: (id) => saveSetting('saverPick', id) },
+      ] : [], [
+        { label: 'Start the screensaver', run: () => { closeSidebar(); startSaver(); } },
         { label: 'Clock', value: s.clock24 ? '24-hour' : '12-hour', run: () => { saveSetting('clock24', !s.clock24); tick(); } },
         {
           label: 'Temperature',
@@ -1110,7 +1243,7 @@
         },
         { label: 'Hidden apps', value: state.showHidden ? 'Shown' : 'Left out', run: () => { state.showHidden = !state.showHidden; render(); } },
         { label: 'Reload the launcher', run: () => location.reload() },
-      ],
+      ]),
     };
   }
 
@@ -1292,8 +1425,34 @@
     };
   }
 
+  // An item with choices opens as a drop-down: its choices sit under it in the same menu until
+  // one is picked or Back closes it.
   function currentMenu() {
-    return sidebar.stack[sidebar.stack.length - 1].menu();
+    const menu = sidebar.stack[sidebar.stack.length - 1].menu();
+    const at = sidebar.dropdown == null ? -1 : sidebar.dropdown;
+    const parent = menu.items[at];
+    if (!parent || !parent.choices) return menu;
+    const options = parent.choices.map((c) => ({
+      label: c.name,
+      option: true,
+      value: c.id === parent.current ? '✓' : '',
+      run: () => {
+        parent.pick(c.id);
+        closeDropdown();
+      },
+    }));
+    return { title: menu.title, items: menu.items.slice(0, at + 1).concat(options, menu.items.slice(at + 1)) };
+  }
+
+  function openDropdown(it) {
+    const at = sidebar.index;
+    sidebar.dropdown = at;
+    sidebar.index = at + 1 + Math.max(0, it.choices.map((c) => c.id).indexOf(it.current));
+  }
+
+  function closeDropdown() {
+    sidebar.index = sidebar.dropdown;
+    sidebar.dropdown = null;
   }
 
   function renderSidebar() {
@@ -1306,7 +1465,8 @@
     const list = $('sb-list');
     list.textContent = '';
     menu.items.forEach((it, i) => {
-      const row = el('div', 'sb-item' + (i === sidebar.index ? ' focused' : '') + (it.disabled ? ' disabled' : '') + (sidebar.armed === it.label ? ' armed' : ''));
+      const row = el('div', 'sb-item' + (i === sidebar.index ? ' focused' : '') + (it.disabled ? ' disabled' : '') +
+        (sidebar.armed === it.label ? ' armed' : '') + (it.option ? ' sb-option' : '') + (i === sidebar.dropdown ? ' open' : ''));
       if (it.icon) {
         const icon = el('span', 'sb-icon');
         icon.innerHTML = sbIcon(it.icon);
@@ -1316,6 +1476,8 @@
       const value = sidebar.armed === it.label ? it.confirm : it.value;
       if (value) row.appendChild(el('span', 'sb-value', value));
       if (it.menu) row.appendChild(el('span', 'sb-more', '›'));
+      // The TV's fonts have no ▾, so it's the › turned.
+      if (it.choices) row.appendChild(el('span', 'sb-more sb-drop', '›'));
       row.addEventListener('click', () => {
         sidebar.index = i;
         sidebarSelect();
@@ -1323,12 +1485,27 @@
       list.appendChild(row);
     });
     $('sb-foot').textContent = sidebar.stack.length > 1 ? 'OK choose  ·  ◀ or BACK go back' : 'OK choose  ·  ▶ or BACK close';
+    // Long lists (an open drop-down) scroll to keep the focused row in view.
+    const row = list.children[sidebar.index];
+    if (row) {
+      if (row.offsetTop < list.scrollTop) list.scrollTop = row.offsetTop;
+      else if (row.offsetTop + row.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = row.offsetTop + row.offsetHeight - list.clientHeight;
+    }
+  }
+
+  function launchParams(detail) {
+    try {
+      return detail || JSON.parse((window.PalmSystem && window.PalmSystem.launchParams) || '{}') || {};
+    } catch (e) {
+      return {};
+    }
   }
 
   function openSidebar() {
     sidebar.open = true;
     sidebar.stack = [{ menu: rootMenu, from: 0 }];
     sidebar.index = 0;
+    sidebar.dropdown = null;
     sidebar.hdmi = null;
     sidebar.av = null;
     sidebar.sleepAt = null;
@@ -1352,7 +1529,10 @@
   function sidebarSelect() {
     const it = currentMenu().items[sidebar.index];
     if (!it || it.disabled) return;
-    if (it.menu) {
+    if (it.choices) {
+      if (sidebar.dropdown === sidebar.index) closeDropdown();
+      else openDropdown(it);
+    } else if (it.menu) {
       sidebar.stack.push({ menu: it.menu, from: sidebar.index });
       sidebar.index = 0;
       sidebar.armed = null;
@@ -1380,21 +1560,28 @@
       do {
         i += dir;
       } while (i >= 0 && i < menu.items.length && menu.items[i].disabled);
-      if (i >= 0 && i < menu.items.length) sidebar.index = i;
+      // An open drop-down keeps focus on its choices.
+      const inDropdown = sidebar.dropdown == null || (menu.items[i] && menu.items[i].option);
+      if (i >= 0 && i < menu.items.length && inDropdown) sidebar.index = i;
       sidebar.armed = null;
       renderSidebar();
     } else if (k === KEY.ENTER) {
       sidebarSelect();
     } else if (k === KEY.RIGHT) {
-      if (menu.items[sidebar.index] && menu.items[sidebar.index].menu) sidebarSelect();
-      else if (sidebar.stack.length === 1) closeSidebar();
+      const it = menu.items[sidebar.index];
+      if (it && (it.menu || (it.choices && sidebar.dropdown == null))) sidebarSelect();
+      else if (sidebar.stack.length === 1 && sidebar.dropdown == null) closeSidebar();
     } else if (back || k === KEY.LEFT) {
-      if (sidebar.stack.length > 1) sidebarBack();
+      if (sidebar.dropdown != null) {
+        closeDropdown();
+        renderSidebar();
+      } else if (sidebar.stack.length > 1) sidebarBack();
       else if (back) closeSidebar();
     }
   }
 
   function sidebarBack() {
+    sidebar.dropdown = null;
     sidebar.index = sidebar.stack.pop().from;
     sidebar.armed = null;
     renderSidebar();
@@ -1512,6 +1699,7 @@
 
     render();
     if (!state.focus && current.rows.length) setFocus(current.rows[0].items[0].key);
+    if (launchParams().sidebar) openSidebar();
 
     // If the TV hands over the live app list, use it to drop uninstalled apps and add new ones.
     // Synced apps keep their entries, with the names, icons and colors config.json gave them.
@@ -1552,12 +1740,38 @@
       location.reload();
     }, 10 * 60 * 1000);
 
+    // Home or Exit with the launcher already on screen launches it again (LG Input Hook): that
+    // goes back to the top of the home screen, whatever was open.
+    // The remote's sidebar button (tv/bin/launcher-sidebar) launches it with { sidebar: true }
+    // instead, which opens the sidebar, or closes it if it's open.
+    document.addEventListener('webOSRelaunch', (e) => {
+      if (saver.on) stopSaver();
+      if (launchParams(e.detail).sidebar) {
+        if (sidebar.open) closeSidebar();
+        else openSidebar();
+        resetIdle();
+        return;
+      }
+      if (sidebar.open) closeSidebar();
+      if (state.editing) finishEdit();
+      state.showHidden = false;
+      render();
+      if (current.rows.length && current.rows[0].items.length) setFocus(current.rows[0].items[0].key);
+      $('scroller').scrollTop = 0;
+      resetIdle();
+    });
+
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         if (saver.on) stopSaver();
+        // Coming back lands on the home screen, and the sidebar button then always opens it.
+        if (sidebar.open) closeSidebar();
         clearTimeout(saver.idle);
+        // A painted scene stops moving while another app is on screen.
+        window.Scenes.pause();
         return;
       }
+      window.Scenes.play();
       tick();
       loadUsed();
       loadWatchlist();
