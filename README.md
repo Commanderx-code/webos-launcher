@@ -141,6 +141,21 @@ npm run install-ipk -- some-app.ipk                # any other webOS package
 
 `root-ssh` logs in with the Homebrew Channel's default password the first time and installs the key. After the next restart the TV only accepts the key. It also sets `tv.root` in `config.json`, which makes `deploy`, `install-ipk` and the hourly updater use `scp` and the TV's installer service (`luna-send`) over SSH. LG's `ares-install` doesn't work here because the Homebrew Channel's SSH server refuses the second command it sends.
 
+### TV-side hooks
+
+`tv/init.d/` holds startup hooks for a rooted TV; `npm run tv-setup` copies them to `/var/lib/webosbrew/init.d/` and starts them. The Homebrew Channel runs them at every boot.
+
+- `20-close-devtools-port`: closes the debug port (below).
+- `30-launcher-on-wake`: opens the launcher when the TV turns on, unless it comes up on an HDMI input, as when a console wakes it over HDMI-CEC. Turning the TV off while it's on an input also brings it back on that input. Its log is `/tmp/launcher-on-wake.log`; `30-launcher-on-wake states` prints power states as they change.
+
+### Layout backup
+
+On a rooted TV the launcher copies its order, hidden apps, Favorites and theme to `/home/root/.config/minimal-launcher/layout.json` (through the Homebrew Channel's root service) whenever they change. A fresh install restores them from there. `sync` also keeps a copy in `backup/layout.json` and packages it, for when the TV itself was reset.
+
+### Opening Plex titles
+
+With `plex.appId` set to PlxNative, a Continue Watching card resumes that title, and a Recently Added card opens its page, using [PlxNative's launch links](https://github.com/GLinnik21/plx-native). On webOS before 7.4 a link only works on a cold start, so the launcher closes PlxNative first.
+
 ### Closing the debug port
 
 webOS opens the web app manager's remote debugging port (9998) on every network interface. On a rooted TV it lets anyone on the network script the Homebrew Channel, which has root. The kernel has no firewall, so a startup hook in `/var/lib/webosbrew/init.d/20-close-devtools-port` bind-mounts a copy of `/etc/systemd/system/scripts/webapp-mgr.sh` without `--remote-debugging-port` and restarts the web app manager. (`--remote-debugging-address=127.0.0.1` was tried first; the web app manager ignores it.) To reopen the port for debugging until the next restart:

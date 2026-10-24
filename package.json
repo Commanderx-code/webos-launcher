@@ -11,7 +11,8 @@
     "auto-update": "node tools/auto-update.mjs",
     "extend-devmode": "node tools/extend-devmode.mjs",
     "root-ssh": "node tools/root-ssh.mjs",
-    "install-ipk": "node tools/install-ipk.mjs"
+    "install-ipk": "node tools/install-ipk.mjs",
+    "tv-setup": "node tools/tv-setup.mjs"
   },
   "devDependencies": {
     "@webos-tools/cli": "^3.2.6",
