@@ -1,7 +1,7 @@
 #!/bin/sh
-# Opens the launcher when the TV turns on, unless a device woke it: when the TV comes up on an
-# HDMI input (the Xbox turned it on over HDMI-CEC, say), it stays there. Watches the TV's power
-# state from the background; the Homebrew Channel runs this at boot.
+# Opens the launcher when the TV is turned on with the remote. When something else turned it on
+# (the Xbox over HDMI-CEC, say) it stays where that put it. Watches the TV's power state from
+# the background; the Homebrew Channel runs this at boot.
 #
 #   30-launcher-on-wake          start the watcher (what the Homebrew Channel does)
 #   30-launcher-on-wake states   print power states as they change, for testing
@@ -31,17 +31,33 @@ log() {
   echo "$(date '+%F %T') $*" >> "$LOG"
 }
 
+foreground() {
+  luna luna://com.webos.applicationManager/getForegroundAppInfo '{}' | field appId
+}
+
+launch() {
+  luna luna://com.webos.applicationManager/launch "{\"id\":\"$LAUNCHER\"}" > /dev/null
+}
+
+# The TV knows what turned it on: "remoteKey" for the remote's power button.
 open_launcher() {
   sleep "$1"
-  app=$(luna luna://com.webos.applicationManager/getForegroundAppInfo '{}' | field appId)
-  case "$app" in
-    com.webos.app.hdmi*|com.webos.app.externalinput*) log "on $app, so a device woke the TV; leaving it" ;;
-    "$LAUNCHER") log "the launcher is already up" ;;
-    *)
-      log "on ${app:-nothing}; opening the launcher"
-      luna luna://com.webos.applicationManager/launch "{\"id\":\"$LAUNCHER\"}" > /dev/null
-      ;;
+  reason=$(luna luna://com.webos.service.tvpower/power/getPowerOnReason '{}' | field reason)
+  case "$reason" in
+    remoteKey) ;;
+    *) log "turned on by ${reason:-unknown}; leaving it on $(foreground)"; return ;;
   esac
+  app=$(foreground)
+  [ "$app" != "$LAUNCHER" ] && log "turned on by the remote, on ${app:-nothing}; opening the launcher" && launch
+  # A device woken with the TV (the Stream Box) can take the screen a few seconds later over
+  # HDMI-CEC. Bring the launcher back if it does, for the first 20 seconds.
+  for wait in 5 5 5 5; do
+    sleep "$wait"
+    app=$(foreground)
+    case "$app" in
+      com.webos.app.hdmi*|com.webos.app.externalinput*) log "$app took the screen; reopening the launcher"; launch ;;
+    esac
+  done
 }
 
 # One line per power state change, as the TV reports it.
@@ -54,7 +70,8 @@ states() {
 }
 
 watch() {
-  open_launcher "$BOOT_SETTLE" &
+  # Right after a boot, treat it as a power-on. A later start (reinstalling this) isn't one.
+  [ "$(cut -d. -f1 /proc/uptime)" -lt 180 ] && open_launcher "$BOOT_SETTLE" &
   while true; do
     last=""
     states | while read -r state; do
@@ -85,7 +102,9 @@ case "$1" in
     states
     ;;
   stop)
-    if running; then kill -- "$(cat "$PIDFILE")"; fi
+    # setsid made the watcher a process group leader: end the group, so its listener and any
+    # pending power-on step go with it.
+    if running; then kill -- "-$(cat "$PIDFILE")"; fi
     rm -f "$PIDFILE"
     ;;
   run)
