@@ -150,7 +150,7 @@ npm run install-ipk -- some-app.ipk                # any other webOS package
 
 ### Commercial mute
 
-`tv/bin/commercial-mute` runs on each Mute press alongside the TV's own mute, which still happens: if the press muted the TV, it unmutes it after 2½ minutes (through `com.webos.service.audio/master/muteVolume`, the mute the button toggles; `com.webos.audio`'s is a separate one), and if the press unmuted it, it cancels that. `tv/lginputhook/keybinds.json` puts it on the remote's Mute button (code 113), next to Home → launcher (773) and 1 → LG's home bar (2). `npm run tv-setup` installs both. To change the length, edit the `150` in the keybinds file.
+`tv/bin/commercial-mute` toggles the TV's mute: muting starts a 2½-minute timer that unmutes it again, and a press while muted unmutes at once. It uses `com.webos.service.audio/master/muteVolume`, the mute the remote's button toggles (`com.webos.audio` has a separate one). Input Hook swallows a key it runs a command for, and kills what the command leaves behind, so the timer runs detached with `setsid`. `tv/lginputhook/keybinds.json` puts it on the remote's Mute button (code 113), next to Home → launcher (773) and 1 → LG's home bar (2). `npm run tv-setup` installs both. To change the length, edit the `150` in the keybinds file.
 
 ### Layout backup
 
