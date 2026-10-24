@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "A minimal home screen for LG webOS TVs",
+  "license": "MIT",
   "scripts": {
     "plex-login": "node tools/plex-login.mjs",
     "sync": "node tools/sync.mjs",

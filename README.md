@@ -211,3 +211,7 @@ dist/         the built package and a fingerprint of what's installed
 ```
 
 To preview in a desktop browser, open `app/index.html` with the window at 1920×1080. Use Enter, the arrow keys, Esc for Back, and R, G, Y and B for the color buttons.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
