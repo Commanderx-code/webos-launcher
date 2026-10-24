@@ -146,7 +146,7 @@ export async function runSync() {
     }
 
     // Your own tile looks from config.json "tiles", keyed by app name or ID, or input ID or name:
-    // a background color, a picture for the icon (trimmed of plain margins), and removeBackground
+    // a new name, a background color, a picture for the icon (trimmed of plain margins), and removeBackground
     // to make the icon's plain border see-through, for icons that come on a solid square.
     for (const [name, look] of Object.entries(config.tiles || {})) {
       const lower = name.toLowerCase();
@@ -173,6 +173,7 @@ export async function runSync() {
         else console.warn(`tiles: couldn't use ${src}: ${(res.stderr || res.error || '').toString().trim()}`);
       }
       for (const t of targets) {
+        if (look.title) t.title = look.title;
         if (look.bgColor) t.bgColor = look.bgColor;
         if (icon) t.icon = icon;
       }
