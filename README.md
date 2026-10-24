@@ -146,7 +146,7 @@ npm run install-ipk -- some-app.ipk                # any other webOS package
 `tv/init.d/` holds startup hooks for a rooted TV; `npm run tv-setup` copies them to `/var/lib/webosbrew/init.d/` and starts them. The Homebrew Channel runs them at every boot.
 
 - `20-close-devtools-port`: closes the debug port (below).
-- `30-launcher-on-wake`: opens the launcher when the TV turns on, unless it comes up on an HDMI input, as when a console wakes it over HDMI-CEC. Turning the TV off while it's on an input also brings it back on that input. Its log is `/tmp/launcher-on-wake.log`; `30-launcher-on-wake states` prints power states as they change.
+- `30-launcher-on-wake`: opens the launcher when the TV turns on, unless it comes up on an HDMI input, as when a console wakes it over HDMI-CEC. Turning the TV off while it's on an input also brings it back on that input. Its log is `/run/minimal-launcher/launcher-on-wake.log`; `30-launcher-on-wake states` prints power states as they change.
 
 ### Layout backup
 

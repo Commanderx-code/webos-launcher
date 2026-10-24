@@ -20,11 +20,10 @@ const hooks = readdirSync(dir).sort();
 const copy = spawnSync('scp', [...ssh, '-q', ...hooks.map((h) => path.join(dir, h)), `${target}:/var/lib/webosbrew/init.d/`], { stdio: 'inherit' });
 if (copy.status !== 0) process.exit(1);
 
-// Stop a running copy of each hook (they keep a pid file), then start them as the boot would.
+// Stop a running copy of each hook that has a "stop" command, then start them as the boot would.
 const run = hooks.map((h) => {
   const file = `/var/lib/webosbrew/init.d/${h}`;
-  const pid = `/tmp/${h.replace(/^\d+-/, '')}.pid`;
-  return `chmod 755 ${file}; [ -f ${pid} ] && kill $(cat ${pid}) 2>/dev/null; rm -f ${pid}; ${file}; echo "started ${h}"`;
+  return `chmod 755 ${file}; grep -q '^  stop)' ${file} && ${file} stop; ${file}; echo "started ${h}"`;
 }).join('; ');
 const res = spawnSync('ssh', [...ssh, target, run], { stdio: 'inherit' });
 process.exit(res.status || 0);

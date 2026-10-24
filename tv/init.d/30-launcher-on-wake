@@ -6,11 +6,14 @@
 #   30-launcher-on-wake          start the watcher (what the Homebrew Channel does)
 #   30-launcher-on-wake states   print power states as they change, for testing
 #
-# Its log is /tmp/launcher-on-wake.log.
+# Its log is /run/minimal-launcher/launcher-on-wake.log.
 
 LAUNCHER=com.minimal.launcher
-LOG=/tmp/launcher-on-wake.log
-PIDFILE=/tmp/launcher-on-wake.pid
+# /run, not /tmp: only root can write there, so no app can plant a link for root to follow.
+# (/var/run on webOS is a link into /tmp.)
+RUN=/run/minimal-launcher
+LOG=$RUN/launcher-on-wake.log
+PIDFILE=$RUN/launcher-on-wake.pid
 # How long the TV gets to finish waking and show what it resumes to before we look.
 SETTLE=6
 BOOT_SETTLE=20
@@ -70,18 +73,31 @@ watch() {
   done
 }
 
+# Whether the pid file names a live copy of this watcher (and not some other process).
+running() {
+  pid=$(cat "$PIDFILE" 2>/dev/null)
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  grep -q "launcher-on-wake" "/proc/$pid/cmdline" 2>/dev/null
+}
+
 case "$1" in
   states)
     states
     ;;
+  stop)
+    if running; then kill -- "$(cat "$PIDFILE")"; fi
+    rm -f "$PIDFILE"
+    ;;
   run)
+    mkdir -p "$RUN" && chmod 700 "$RUN"
     echo $$ > "$PIDFILE"
     log "watching the power state"
     watch
     ;;
   *)
     # Started by the Homebrew Channel: run in the background, once.
-    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then exit 0; fi
+    mkdir -p "$RUN" && chmod 700 "$RUN"
+    if running; then exit 0; fi
     setsid "$0" run > /dev/null 2>&1 < /dev/null &
     ;;
 esac
