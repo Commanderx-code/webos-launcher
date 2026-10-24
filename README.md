@@ -10,6 +10,16 @@ A minimal home screen for LG webOS TVs, made for a stock TV in Developer Mode (w
 - **Themes**: **Ambient** (the focused app's color glows behind the grid), **Aurora** (slowly drifting colors), **Midnight** (plain dark) and **Wallpaper** (your own picture or looping video)
 - **Screensaver**: after a few idle minutes, a big clock and the weather over your own pictures and videos, or Plex artwork
 
+![The launcher's home screen](docs/screenshots/home.jpg)
+
+| Plex rows, Aurora theme | Editing an app |
+| --- | --- |
+| ![Continue Watching and Recently Added from Plex](docs/screenshots/plex-rows.jpg) | ![Moving an app in edit mode](docs/screenshots/edit.jpg) |
+
+![The screensaver](docs/screenshots/screensaver.jpg)
+
+*Screenshots are from the launcher's code running in a desktop browser at 1920×1080, with sample titles and artwork in place of a real Plex library.*
+
 There's no build step. The app is plain HTML, CSS and JavaScript in `app/`, written for the Chromium 68 engine that webOS 5 runs.
 
 ## Controls
