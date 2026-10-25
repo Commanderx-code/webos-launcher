@@ -26,8 +26,8 @@
   button { font: inherit; color: inherit; border: 0; background: var(--key); border-radius: 14px; cursor: pointer; touch-action: manipulation; }
   button:active, button.down { background: var(--key-down); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .power { width: 48px; height: 48px; border-radius: 50%; color: var(--danger); flex: none; }
-  .power.armed { background: var(--danger); color: #fff; }
+  .power { width: 48px; height: 48px; border-radius: 50%; color: var(--danger); flex: none; display: grid; place-items: center; }
+  .power svg { width: 24px; height: 24px; }
   .pad { position: relative; width: min(100%, 300px); aspect-ratio: 1; margin: 0 auto 20px; }
   .pad button { position: absolute; display: grid; place-items: center; font-size: 26px; }
   .pad .up { top: 0; left: 33%; width: 34%; height: 31%; border-radius: 22px 22px 10px 10px; }
@@ -47,6 +47,16 @@
   .app .tile .letter { font-size: 22px; font-weight: 700; }
   .app .name { font-size: 12px; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .app:active .tile { outline: 2px solid var(--text); }
+  .type input { width: 100%; height: 52px; padding: 0 14px; margin-bottom: 10px; border: 0; border-radius: 14px; background: var(--raised); color: var(--text); font: inherit; font-size: 17px; user-select: text; -webkit-user-select: text; }
+  .type input:focus { outline: 2px solid var(--accent); }
+  .type .row button { font-size: 15px; }
+  .row.two { grid-template-columns: repeat(2, 1fr); }
+  .row button[hidden] { display: none; }
+  .results { display: grid; gap: 8px; margin-top: 4px; }
+  .result { display: flex; align-items: center; gap: 12px; padding: 8px; text-align: left; background: var(--raised); }
+  .result img, .result .poster { width: 44px; height: 66px; border-radius: 6px; object-fit: cover; flex: none; background: var(--key); }
+  .result b { display: block; font-weight: 600; }
+  .result small { color: var(--muted); font-size: 13px; }
   .inputs { display: flex; flex-wrap: wrap; gap: 10px; }
   .inputs button { padding: 12px 16px; }
   #toast { position: fixed; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--raised); color: var(--text); padding: 10px 16px; border-radius: 999px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
@@ -59,7 +69,7 @@
     <h1>TV Remote</h1>
     <div id="now"></div>
   </div>
-  <button class="power" id="power" aria-label="Turn the TV off">⏻</button>
+  <button class="power" id="power" aria-label="Turn the TV off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 3v8"/><path d="M6.6 6.6a8 8 0 1 0 10.8 0"/></svg></button>
 </header>
 
 <div class="pad">
@@ -87,6 +97,19 @@
   <button data-button="FASTFORWARD" aria-label="Fast forward">⏩</button>
 </div>
 
+<h2>Type on the TV</h2>
+<div class="type">
+  <input id="text" type="text" maxlength="200" placeholder="Open a search box on the TV, then type" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search" aria-label="Text to type on the TV">
+  <div class="row two">
+    <button id="clear">Clear</button>
+    <button id="enter">Enter ⏎</button>
+  </div>
+  <div class="row two">
+    <button id="youtube" hidden>Search YouTube</button>
+    <button id="plex" hidden>Search Plex</button>
+  </div>
+  <div class="results" id="results"></div>
+</div>
 <h2 id="recent-title" hidden>Recently used</h2>
 <div class="apps" id="recent"></div>
 <h2>Apps</h2>
@@ -107,12 +130,20 @@ function toast(text) {
   toast.timer = setTimeout(() => t.classList.remove('show'), 1800);
 }
 
-function act(body) {
-  if (navigator.vibrate) navigator.vibrate(12);
+// failed: what to say when the TV refuses, in place of its own error. Resolves with whether it
+// worked.
+function act(body, failed) {
+  if (navigator.vibrate && !failed) navigator.vibrate(12);
   return fetch('/api/act', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     .then((r) => r.json())
-    .then((r) => { if (!r.ok) toast("Didn't work: " + r.error); })
-    .catch(() => toast("Can't reach the TV"));
+    .then((r) => {
+      if (!r.ok) toast(failed || "Didn't work: " + r.error);
+      return !!r.ok;
+    })
+    .catch(() => {
+      toast("Can't reach the TV");
+      return false;
+    });
 }
 
 // Buttons; volume repeats while held.
@@ -128,19 +159,10 @@ document.querySelectorAll('[data-button]').forEach((b) => {
   ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => b.addEventListener(ev, stop));
 });
 
-// Power off asks for a second tap.
-const power = document.getElementById('power');
-power.addEventListener('click', () => {
-  if (!power.classList.contains('armed')) {
-    power.classList.add('armed');
-    toast('Tap again to turn the TV off');
-    setTimeout(() => power.classList.remove('armed'), 3000);
-    return;
-  }
-  power.classList.remove('armed');
-  act({ button: 'POWER' }).then(() => toast('Turning off'));
+// Power off with one tap.
+document.getElementById('power').addEventListener('click', () => {
+  act({ button: 'POWER' }).then((ok) => { if (ok) toast('Turning off'); });
 });
-
 function tile(app) {
   const b = document.createElement('button');
   b.className = 'app';
@@ -169,9 +191,11 @@ function tile(app) {
 function render() {
   const byId = {};
   state.apps.forEach((a) => { byId[a.id] = a; });
-  state.inputs.forEach((i) => { byId[i.id] = { id: i.id, title: i.title }; });
+  state.inputs.forEach((i) => { byId[i.id] = i; });
   const current = byId[state.foreground];
   document.getElementById('now').textContent = current ? 'On screen: ' + current.title : '';
+  document.getElementById('youtube').hidden = !state.youtube;
+  document.getElementById('plex').hidden = !state.plex;
   const recent = document.getElementById('recent');
   recent.replaceChildren(...state.recent.map((id) => byId[id]).filter(Boolean).map(tile));
   document.getElementById('recent-title').hidden = !recent.children.length;
