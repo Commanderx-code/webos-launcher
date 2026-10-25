@@ -23,5 +23,9 @@
   "plex": {
     "server": "http://192.168.1.10:32400",
     "token": ""
+  },
+  "relay": {
+    "host": "192.168.1.10",
+    "dir": "tv-remote"
   }
 }

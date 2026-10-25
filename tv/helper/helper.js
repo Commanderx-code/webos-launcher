@@ -128,6 +128,15 @@ function lunaSend(uri, payload) {
   lunaCall(uri, payload).catch((err) => log(err.message));
 }
 
+// "on" or "off". Turned off, the TV is in "Active Standby" until it suspends, and it can't turn
+// itself back on: the relay (relay/relay.mjs) wakes it with a Wake-on-LAN packet. When the power
+// service doesn't say, the TV is answering, so it counts as on.
+function powerState() {
+  return lunaCall('luna://com.webos.service.tvpower/power/getPowerState', {}).then(
+    (reply) => (/^(Active Standby|Screen Off|Suspend)$/.test(reply.state) ? 'off' : 'on'),
+    () => 'on');
+}
+
 function checkSleep() {
   const timer = readJSON(SLEEP_FILE, null);
   if (!timer || !timer.at) return;
@@ -396,13 +405,13 @@ function act(body) {
     case 'LAUNCHER': return launch(LAUNCHER);
     case 'LGHOME': return launch(LG_HOME);
     case 'MUTE': return new Promise((resolve) => execFile('/home/root/minimal-launcher/bin/commercial-mute', ['150'], () => resolve()));
-    case 'POWER': {
+    case 'POWER': return powerState().then((power) => {
+      if (power === 'off') throw new Error('the TV is already off');
       // Started on its own and not waited for: going into standby can stall its last call.
       const child = spawn('/home/root/minimal-launcher/bin/power-off', [], { detached: true, stdio: 'ignore' });
       child.on('error', (err) => log('power-off: ' + err.message));
       child.unref();
-      return Promise.resolve();
-    }
+    });
     case 'TEXTENTER': return remote.request('ssap://com.webos.service.ime/sendEnterKey');
     default:
       if (BUTTONS.indexOf(body.button) === -1) return Promise.reject(new Error('unknown button'));
@@ -428,7 +437,9 @@ http.createServer((req, res) => {
   if (!sameKey(cookieKey(req))) return send(res, 403, 'text/plain', 'Open the private link from the launcher setup on this phone first.');
 
   if (req.method === 'GET' && url.pathname === '/') return send(res, 200, 'text/html; charset=utf-8', PAGE);
-  if (req.method === 'GET' && url.pathname === '/api/state') return send(res, 200, 'application/json', JSON.stringify(state()));
+  if (req.method === 'GET' && url.pathname === '/api/state') {
+    return powerState().then((power) => send(res, 200, 'application/json', JSON.stringify(Object.assign(state(), { power: power }))));
+  }
   if (req.method === 'GET' && url.pathname === '/api/plex-search') {
     const q = (url.searchParams.get('q') || '').trim().slice(0, 100);
     if (!q) return send(res, 200, 'application/json', '[]');
