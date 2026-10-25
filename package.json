@@ -14,7 +14,8 @@
     "root-ssh": "node tools/root-ssh.mjs",
     "install-ipk": "node tools/install-ipk.mjs",
     "tv-setup": "node tools/tv-setup.mjs",
-    "update-apps": "node tools/app-updates.mjs"
+    "update-apps": "node tools/app-updates.mjs",
+    "relay-setup": "node tools/relay-setup.mjs"
   },
   "devDependencies": {
     "@webos-tools/cli": "^3.2.6",

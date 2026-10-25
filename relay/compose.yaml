@@ -1,0 +1,22 @@
+# The phone remote's relay (relay.mjs), for Docker Compose, Arcane or Dockge. npm run
+# relay-setup copies this folder to the server and writes data/remote.key and .env: TV_HOST,
+# TV_MAC, UID, GID, and RELAY_DIR, this folder's full path, which also works from Arcane or
+# Dockge, where the folder has another path inside their own container. Host networking, so
+# its wake-up packets reach the home network.
+services:
+  tv-remote:
+    image: node:22-alpine
+    container_name: tv-remote
+    restart: unless-stopped
+    network_mode: host
+    user: "${UID}:${GID}"
+    working_dir: /relay
+    command: node relay.mjs
+    environment:
+      TV_HOST: ${TV_HOST}
+      TV_MAC: ${TV_MAC}
+      PORT: "8765"
+      DATA: /data
+    volumes:
+      - ${RELAY_DIR}/relay.mjs:/relay/relay.mjs:ro
+      - ${RELAY_DIR}/data:/data

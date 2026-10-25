@@ -99,6 +99,9 @@ A stock TV won't let an app replace the Home button. Two things get close:
 | `screensaverMinutes` | Idle minutes before the screensaver starts (default 5); `0` turns it off. |
 | `screensaverFolder` | A folder of your own pictures and videos for the screensaver, shown in random order, e.g. `"~/Pictures/Launcher screen savers"`. Pictures stay up 12 seconds; videos play through. Leave it empty to show Plex artwork instead. |
 | `screensaverNames` | Names for the screensaver's files in the sidebar's picker, by file name, e.g. `{"IMG_0042.jpg": "Mountain lake"}`. Files without one are named after the file. |
+| `relay.host` | The always-on computer that runs the phone remote's relay (`npm run relay-setup`), reached over SSH: a host, or `user@host`. |
+| `relay.dir` | Where the relay goes on that computer, a path from the SSH user's home folder or an absolute one (default `tv-remote`). For a Docker manager such as Arcane or Dockge, its projects folder plus `/tv-remote`. |
+| `tv.mac` | The MAC address of the TV's wired network port, for the relay to wake it. Read from the TV when it's left out. |
 | `plex.appId` | The app the Plex cards open, by app ID. Defaults to the official Plex app; e.g. `"com.beb.plxnative"` for PlxNative. |
 | `theme` | The starting theme: `ambient`, `aurora`, `midnight`, `ocean`, `sunset`, `space`, or a wallpaper's ID such as `wall-revan` (`wall-` and its name in lowercase, with dashes for spaces). Once you pick one with the blue button, the TV's choice wins. |
 | `tiles` | Your own tile looks, keyed by app name or ID, or input ID: `title` (a new name), `bgColor`, `icon` (a picture; plain margins are trimmed), `removeBackground` (makes the icon's plain border see-through, for icons that come on a solid square), and for the glass icons `glassColor` (the logo's color) and `glassIcon` (a picture or `.svg` to use as its silhouette). E.g. `{"Netflix": {"bgColor": "#000000"}, "HDMI_2": {"icon": "media/tiles/spectrum-tv.png", "bgColor": "#ffffff"}}`. |
@@ -189,7 +192,15 @@ From the hour picked in Launcher settings (9, 10 or 11 PM, or midnight) until 7 
 
 ### Phone remote
 
-The helper serves a remote control page on port 8765 for phones on the home network: a D-pad with OK and Back, Home (the launcher), LG's home bar, volume, the commercial mute, play controls, power off, and your apps and inputs. Buttons go through the TV's own network remote service, using the client key the computer was approved with. `npm run tv-setup` prints a private link (`http://<tv>:8765/?k=…`): opening it once on a phone saves the key in a cookie, and the page refuses anyone without it.
+The helper serves a remote control page on port 8765 for phones on the home network: a D-pad with OK and Back, Home (the launcher), LG's home bar, volume, the commercial mute, play controls, power, and your apps and inputs. Buttons go through the TV's own network remote service, using the client key the computer was approved with. `npm run tv-setup` prints a private link (`http://<tv>:8765/?k=…`): opening it once on a phone saves the key in a cookie, and the page refuses anyone without it.
+
+**Turning the TV on from the phone**: the page lives on the TV, and a TV that's off soon stops answering on the network, so on its own the page can only turn the TV off. The relay in `relay/` fixes that. It runs on an always-on computer on the home network that has Docker (a home server or NAS), and serves the same page on the same port, passing everything through to the TV. When the TV is off it still loads the page (showing "TV is off"), and the power button wakes the TV with a Wake-on-LAN packet. For that, the TV's **Mobile TV On** setting must be on (Settings → All Settings → General → Mobile TV On, "Turn on via Wi-Fi"), and the TV should be on a wired connection. Set `relay.host` in config.json, then, with the TV on:
+
+```sh
+npm run relay-setup
+```
+
+It copies the relay to that computer over SSH, with the TV's address, its MAC address and the remote's key, starts it with Docker Compose, and prints the relay's private link (`http://<server>:8765/?k=…`, the same key as the TV's). If your SSH user can't run Docker there, it says how to start it (with sudo, or as the `tv-remote` project in a Docker manager such as Arcane or Dockge: point `relay.dir` at its projects folder). Run it again after changing `relay/`; changes to the page reach the relay by themselves.
 
 **Type on the TV**: with a text box open on the TV (one that brings up LG's own keyboard, as the web browser and many apps do), what you type on the phone appears there as you type, and Enter submits it. Apps that draw their own keyboard, such as YouTube and most streaming apps, don't take it, so two buttons search directly: **Search YouTube** opens YouTube's results for the text, the way a voice search does, and **Search Plex** lists matching movies, shows and episodes from your server on the phone, with posters; tap one to open its page in PlxNative on the TV (with `plex.appId` set to another Plex app, that app just opens). The helper runs the Plex search, so the server's token never reaches the phone.
 
@@ -253,6 +264,7 @@ User timers only run while you're logged in. `Persistent=true` catches up on a m
 app/          the TV app: index.html, style.css, main.js, luna.js, plex.js, weather.js, scenes.js
 app/data/     written by `npm run sync`; not in git (it holds your Plex token)
 tools/        sync, auto-update, deploy, plex-login and extend-devmode
+relay/        the phone remote's relay, for a home server (Docker Compose)
 tools/glass-icons/  silhouettes drawn for the glass icons; most come from Simple Icons
 config.json   your TV address and settings; not in git
 dist/         the built package and a fingerprint of what's installed

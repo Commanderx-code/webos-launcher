@@ -59,6 +59,8 @@
   .result small { color: var(--muted); font-size: 13px; }
   .inputs { display: flex; flex-wrap: wrap; gap: 10px; }
   .inputs button { padding: 12px 16px; }
+  /* While the TV is off, only the power button does anything. */
+  body.off > :not(header):not(#toast) { opacity: .35; pointer-events: none; }
   #toast { position: fixed; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--raised); color: var(--text); padding: 10px 16px; border-radius: 999px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
   #toast.show { opacity: 1; }
 </style>
@@ -159,9 +161,16 @@ document.querySelectorAll('[data-button]').forEach((b) => {
   ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => b.addEventListener(ev, stop));
 });
 
-// Power off with one tap.
+// One tap turns the TV off, or on when it's off. Turning it on needs the relay (npm run
+// relay-setup) when the TV is asleep, since this page lives on the TV.
 document.getElementById('power').addEventListener('click', () => {
-  act({ button: 'POWER' }).then((ok) => { if (ok) toast('Turning off'); });
+  const off = state.power === 'off';
+  act({ button: 'POWER' }).then((ok) => {
+    if (!ok) return;
+    toast(off ? 'Turning on' : 'Turning off');
+    // Show the change as soon as the TV reports it.
+    [3000, 6000, 10000, 15000, 25000].forEach((ms) => setTimeout(refresh, ms));
+  });
 });
 function tile(app) {
   const b = document.createElement('button');
@@ -193,7 +202,10 @@ function render() {
   state.apps.forEach((a) => { byId[a.id] = a; });
   state.inputs.forEach((i) => { byId[i.id] = i; });
   const current = byId[state.foreground];
-  document.getElementById('now').textContent = current ? 'On screen: ' + current.title : '';
+  const off = state.power === 'off';
+  document.body.classList.toggle('off', off);
+  document.getElementById('power').setAttribute('aria-label', off ? 'Turn the TV on' : 'Turn the TV off');
+  document.getElementById('now').textContent = off ? 'TV is off' : current ? 'On screen: ' + current.title : '';
   document.getElementById('youtube').hidden = !state.youtube;
   document.getElementById('plex').hidden = !state.plex;
   const recent = document.getElementById('recent');
@@ -208,8 +220,13 @@ function render() {
   }));
 }
 
+// When the state doesn't load, the TV is off (or asleep, out of reach).
 function refresh() {
-  fetch('/api/state').then((r) => r.json()).then((s) => { state = s; render(); }).catch(() => {});
+  fetch('/api/state')
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error('no state'))))
+    .then((s) => { state = s; })
+    .catch(() => { state.power = 'off'; })
+    .then(render);
 }
 refresh();
 setInterval(refresh, 5000);
