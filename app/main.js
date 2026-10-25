@@ -48,7 +48,7 @@
   ];
   wallpapers.forEach((w) => THEMES.push({ id: w.id, name: w.name }));
   // "photo" was the one wallpaper's theme; it's now the first wallpaper.
-  function oldTheme(id) {
+  function migrateTheme(id) {
     return id === 'photo' && wallpapers.length ? wallpapers[0].id : id;
   }
   function wallpaperFor(id) {
@@ -62,6 +62,18 @@
     { id: 'brand', name: 'Glass, brand colors', glass: true },
     { id: 'ice', name: 'Glass, ice blue', glass: true },
   ];
+  // Night mode: from the chosen hour until 7 AM the launcher dims, and on a rooted TV the helper
+  // (tv/helper) turns on the TV's Eye Comfort Mode and energy saving. The setting saved is the
+  // id, the start hour as text, which the helper reads from the layout backup; its nightNow()
+  // and NIGHT_ENDS must match isNight() and NIGHT_ENDS here.
+  const NIGHT_MODES = [
+    { id: 'off', name: 'Off', hour: null },
+    { id: '21', name: '9 PM to 7 AM', hour: 21 },
+    { id: '22', name: '10 PM to 7 AM', hour: 22 },
+    { id: '23', name: '11 PM to 7 AM', hour: 23 },
+    { id: '0', name: 'Midnight to 7 AM', hour: 0 },
+  ];
+  const NIGHT_ENDS = 7;
   // The glass's own color, also picked in the sidebar.
   const GLASS_TINTS = [
     { id: 'clear', name: 'Clear', color: 'rgba(20, 22, 30, 0.28)' },
@@ -110,7 +122,7 @@
     editing: null,   // app key, or "input:<id>" for an input, of the tile being edited
     focus: null,     // key of the focused item, e.g. "app:netflix" or "continue:2"
     // config.json can set the starting theme; the blue button's choice wins after that.
-    theme: oldTheme(store.get('theme', packagedLayout.theme || data.theme || THEMES[0].id)),
+    theme: migrateTheme(store.get('theme', packagedLayout.theme || data.theme || THEMES[0].id)),
     rowIndex: {},    // where focus last was in each scrolling row, to land there again
     weather: null,
     plexRows: {
@@ -314,7 +326,7 @@
     if (item.kind === 'app') {
       const app = item.app;
       title = app.title;
-      if (app.bgColor) box.style.backgroundColor = app.bgColor;
+      if (app.bgColor) box.style.setProperty('--tile-bg', app.bgColor);
       addGlassIcon(box, app.glass);
       if (app.icon) {
         const img = el('img');
@@ -336,7 +348,7 @@
     } else {
       title = item.input.title;
       box.classList.add('tile-input');
-      if (item.input.bgColor) box.style.backgroundColor = item.input.bgColor;
+      if (item.input.bgColor) box.style.setProperty('--tile-bg', item.input.bgColor);
       addGlassIcon(box, item.input.glass);
       if (item.input.icon) {
         const img = el('img');
@@ -472,9 +484,9 @@
     if (!THEMES.some((t) => t.id === state.theme)) state.theme = THEMES[0].id;
     const icons = iconStyle();
     const app = $('app');
-    // Keeps the sidebar open when the theme changes from its menu.
     const wallpaper = wallpaperFor(state.theme);
-    // Every wallpaper shares the theme-photo look.
+    // Every wallpaper shares the theme-photo look. sb-open stays, so the sidebar stays open when
+    // the theme changes from its menu.
     app.className = 'theme-' + (wallpaper ? 'photo' : state.theme) + (window.Scenes.has(state.theme) ? ' painted' : '') +
       (icons.glass ? ' glass glass-' + icons.id : '') + (app.classList.contains('sb-open') ? ' sb-open' : '');
     app.style.setProperty('--glass-tint', glassTint().color);
@@ -525,9 +537,14 @@
     return ICON_STYLES.filter((t) => t.id === state.settings.icons)[0] || ICON_STYLES[0];
   }
 
-  function setIcons(id) {
-    saveSetting('icons', id);
+  // A setting that changes the look: saved, then shown.
+  function setLook(key, id) {
+    saveSetting(key, id);
     applyTheme();
+  }
+
+  function setIcons(id) {
+    setLook('icons', id);
   }
 
   function cycleIcons() {
@@ -538,8 +555,7 @@
   }
 
   function setGlassTint(id) {
-    saveSetting('glassTint', id);
-    applyTheme();
+    setLook('glassTint', id);
   }
 
   function glassTint() {
@@ -842,7 +858,7 @@
 
   // ---------------------------------------------------------------- screensaver
 
-  const saver = { on: false, idle: null, timer: null, drift: null, deck: [], front: 0, lastVideo: false, only: false };
+  const saver = { on: false, idle: null, timer: null, drift: null, deck: [], front: 0, lastVideo: false, single: false };
   const ownSlides = data.screensaver && data.screensaver.length ? data.screensaver : null;
   // The sidebar's screensaver picker: all of your own pictures and videos, or just one.
   const SAVER_PICKS = ownSlides ? [{ id: 'all', name: 'All, shuffled' }].concat(ownSlides.map((sl) => ({ id: sl.id || sl.src, name: sl.name || sl.src }))) : [];
@@ -910,7 +926,7 @@
       hideSaverVideo();
       $('saver-caption').textContent = slide.caption;
       // A screensaver of one picture just stays up.
-      if (!saver.only) saver.timer = setTimeout(nextSlide, SLIDE_MS);
+      if (!saver.single) saver.timer = setTimeout(nextSlide, SLIDE_MS);
     };
     img.onerror = () => {
       saver.timer = setTimeout(nextSlide, 1000);
@@ -930,7 +946,7 @@
       $('saver-caption').textContent = slide.caption;
       // A short clip loops until a picture's worth of time has passed, and a screensaver of one
       // video loops for good.
-      if (saver.only) video.loop = true;
+      if (saver.single) video.loop = true;
       else if (!(video.duration * 1000 >= SLIDE_MS)) {
         video.loop = true;
         saver.timer = setTimeout(nextSlide, SLIDE_MS);
@@ -977,7 +993,7 @@
     saver.on = true;
     saver.deck = [];
     saver.lastVideo = false;
-    saver.only = saverSlides().length === 1;
+    saver.single = saverSlides().length === 1;
     // One video at a time: the wallpaper rests while the screensaver runs.
     if (wallVideo()) wallVideo().pause();
     $('saver').classList.add('show');
@@ -1206,6 +1222,11 @@
 
   const SAVER_STEPS = [0, 2, 5, 10, 15, 30];
 
+  // A sidebar item that opens as a drop-down of list; picked is the list's current entry.
+  function choice(label, list, picked, pick) {
+    return { label: label, value: picked ? picked.name : '', choices: list, current: picked ? picked.id : null, pick: pick };
+  }
+
   function settingsMenu() {
     const s = state.settings;
     const theme = THEMES.filter((t) => t.id === state.theme)[0];
@@ -1213,11 +1234,12 @@
     return {
       title: 'Launcher settings',
       items: [
-        { label: 'Theme', value: theme ? theme.name : '', choices: THEMES, current: state.theme, pick: setTheme },
-        { label: 'Icons', value: iconStyle().name, choices: ICON_STYLES, current: iconStyle().id, pick: setIcons },
+        choice('Theme', THEMES, theme, setTheme),
+        choice('Icons', ICON_STYLES, iconStyle(), setIcons),
       ].concat(iconStyle().glass ? [
-        { label: 'Glass color', value: glassTint().name, choices: GLASS_TINTS, current: glassTint().id, pick: setGlassTint },
+        choice('Glass color', GLASS_TINTS, glassTint(), setGlassTint),
       ] : [], [
+        choice('Night mode', NIGHT_MODES, nightMode(), (id) => { saveSetting('night', id); tick(); }),
         {
           label: 'Screensaver',
           value: minutes ? 'After ' + minutes + ' min' : 'Off',
@@ -1228,7 +1250,7 @@
           },
         },
       ], SAVER_PICKS.length > 2 ? [
-        { label: 'Screensaver shows', value: saverPick().name, choices: SAVER_PICKS, current: saverPick().id, pick: (id) => saveSetting('saverPick', id) },
+        choice('Screensaver shows', SAVER_PICKS, saverPick(), (id) => saveSetting('saverPick', id)),
       ] : [], [
         { label: 'Start the screensaver', run: () => { closeSidebar(); startSaver(); } },
         { label: 'Clock', value: s.clock24 ? '24-hour' : '12-hour', run: () => { saveSetting('clock24', !s.clock24); tick(); } },
@@ -1296,7 +1318,21 @@
         {
           label: 'Turn off the TV',
           confirm: 'Press OK again to turn off',
-          run: () => rootLuna('luna://com.webos.service.tvpower/power/powerOff', { reason: 'remoteKey' }).catch((err) => toast("Couldn't turn off: " + err.message)),
+          run: () => {
+            // Dark at once, like the remote's power button; the TV takes a moment more to power
+            // down. tv/bin/power-off also darkens the panel itself.
+            document.body.classList.add('powering-off');
+            // In case the TV stays on. Coming back on screen also clears it (start()).
+            setTimeout(() => document.body.classList.remove('powering-off'), 15000);
+            // Started on its own, so a slow shutdown can't outlast the call's time limit. Without
+            // tv/bin installed, the plain power-off, started the same way.
+            window.Luna.exec('P=/home/root/minimal-launcher/bin/power-off; if [ -x $P ]; then setsid $P > /dev/null 2>&1 < /dev/null & ' +
+              'else setsid script -q -c "luna-send -n 1 luna://com.webos.service.tvpower/power/powerOff \'{\\"reason\\":\\"remoteKey\\"}\'" /dev/null > /dev/null 2>&1 < /dev/null & fi')
+              .catch((err) => {
+                document.body.classList.remove('powering-off');
+                toast("Couldn't turn off: " + err.message);
+              });
+          },
         },
         {
           label: 'Reboot the TV',
@@ -1597,6 +1633,18 @@
     $('date').textContent = date;
     $('saver-time').textContent = time;
     $('saver-date').textContent = date;
+    document.body.classList.toggle('night', isNight(now));
+  }
+
+  function nightMode() {
+    return NIGHT_MODES.filter((m) => m.id === state.settings.night)[0] || NIGHT_MODES[0];
+  }
+
+  function isNight(now) {
+    const from = nightMode().hour;
+    if (from === null) return false;
+    const hour = now.getHours();
+    return from > NIGHT_ENDS ? hour >= from || hour < NIGHT_ENDS : hour >= from && hour < NIGHT_ENDS;
   }
 
   // ---------------------------------------------------------------- Plex Watchlist
@@ -1745,6 +1793,7 @@
     // The remote's sidebar button (tv/bin/launcher-sidebar) launches it with { sidebar: true }
     // instead, which opens the sidebar, or closes it if it's open.
     document.addEventListener('webOSRelaunch', (e) => {
+      document.body.classList.remove('powering-off');
       if (saver.on) stopSaver();
       if (launchParams(e.detail).sidebar) {
         if (sidebar.open) closeSidebar();
@@ -1771,6 +1820,7 @@
         window.Scenes.pause();
         return;
       }
+      document.body.classList.remove('powering-off');
       window.Scenes.play();
       tick();
       loadUsed();

@@ -182,7 +182,7 @@ body {
 .theme-aurora .tile-input,
 .theme-photo .tile-input,
 .painted .tile-input {
-  background-color: rgba(255, 255, 255, 0.07);
+  --tile-bg: rgba(255, 255, 255, 0.07);
 }
 
 /* ------------------------------------------------------------ painted scenes */
@@ -662,7 +662,7 @@ body {
 .glass .tile-box {
   border-radius: 1.6rem;
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0.08) 38%,
-    rgba(255, 255, 255, 0.04) 62%, rgba(255, 255, 255, 0.14) 100%) var(--glass-tint) !important;
+    rgba(255, 255, 255, 0.04) 62%, rgba(255, 255, 255, 0.14) 100%) var(--glass-tint);
   box-shadow:
     inset 0 0.09rem 0 rgba(255, 255, 255, 0.75),
     inset 0 -0.06rem 0 rgba(255, 255, 255, 0.25),
@@ -733,7 +733,7 @@ body {
 
 .glass .tile.focused .tile-box {
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.16) 40%,
-    rgba(255, 255, 255, 0.08) 62%, rgba(255, 255, 255, 0.22) 100%) var(--glass-tint) !important;
+    rgba(255, 255, 255, 0.08) 62%, rgba(255, 255, 255, 0.22) 100%) var(--glass-tint);
   box-shadow:
     inset 0 0.12rem 0 rgba(255, 255, 255, 0.95),
     inset 0 -0.08rem 0 rgba(255, 255, 255, 0.4),
@@ -1160,4 +1160,31 @@ body {
   padding: 1.5rem 3rem 0;
   font-size: 1.125rem;
   color: var(--muted);
+}
+
+/* ------------------------------------------------------------ night and power */
+
+/* Night mode dims everything, the screensaver too. */
+body.night::after {
+  content: "";
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  z-index: 100;
+}
+
+/* Turning off from the menu: dark at once. */
+body.powering-off::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: #000;
+  z-index: 101;
 }

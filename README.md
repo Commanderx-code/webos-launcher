@@ -98,7 +98,7 @@ A stock TV won't let an app replace the Home button. Two things get close:
 | `weather.zip` | The ZIP code for the weather. Leave `weather` out to hide it. `weather.units` is `fahrenheit` or `celsius`. |
 | `screensaverMinutes` | Idle minutes before the screensaver starts (default 5); `0` turns it off. |
 | `screensaverFolder` | A folder of your own pictures and videos for the screensaver, shown in random order, e.g. `"~/Pictures/Launcher screen savers"`. Pictures stay up 12 seconds; videos play through. Leave it empty to show Plex artwork instead. |
-| `screensaverNames` | Names for the screensaver's files in the sidebar's picker, by file name, e.g. `{"HSNePJz.jpeg": "Sith tower"}`. Files without one are named after the file. |
+| `screensaverNames` | Names for the screensaver's files in the sidebar's picker, by file name, e.g. `{"IMG_0042.jpg": "Mountain lake"}`. Files without one are named after the file. |
 | `plex.appId` | The app the Plex cards open, by app ID. Defaults to the official Plex app; e.g. `"com.beb.plxnative"` for PlxNative. |
 | `theme` | The starting theme: `ambient`, `aurora`, `midnight`, `ocean`, `sunset`, `space`, or a wallpaper's ID such as `wall-revan` (`wall-` and its name in lowercase, with dashes for spaces). Once you pick one with the blue button, the TV's choice wins. |
 | `tiles` | Your own tile looks, keyed by app name or ID, or input ID: `title` (a new name), `bgColor`, `icon` (a picture; plain margins are trimmed), `removeBackground` (makes the icon's plain border see-through, for icons that come on a solid square), and for the glass icons `glassColor` (the logo's color) and `glassIcon` (a picture or `.svg` to use as its silhouette). E.g. `{"Netflix": {"bgColor": "#000000"}, "HDMI_2": {"icon": "media/tiles/spectrum-tv.png", "bgColor": "#ffffff"}}`. |
@@ -163,13 +163,14 @@ npm run install-ipk -- some-app.ipk                # any other webOS package
 `tv/init.d/` holds startup hooks for a rooted TV; `npm run tv-setup` copies them to `/var/lib/webosbrew/init.d/` and starts them, and installs `tv/bin/` and Input Hook's keybinds. The Homebrew Channel runs the hooks at every boot.
 
 - `20-close-devtools-port`: closes the debug port (below).
-- `40-launcher-helper`: starts `tv/helper/helper.js` (Node, root), which records which apps are on screen for the Recently Used row (`/home/root/.config/minimal-launcher/recent.json`) and serves the phone remote (below).
+- `40-launcher-helper`: starts `tv/helper/helper.js` (Node, root), which records which apps are on screen for the Recently Used row (`/home/root/.config/minimal-launcher/recent.json`), serves the phone remote, and runs the sleep timer and Night mode (below).
+- `55-allow-admanager`: Life's Good Without Spying's "stop ad services" option swaps LG's ad manager (`/usr/sbin/admanager`) for a stub, and Disney+, ESPN and Peacock then hang on their loading screens. This hook removes just that stub at boot, and watches for a few minutes in case it comes back; the app's other blocks stay on. Pressing Apply in Life's Good Without Spying stubs it again: restart the TV or run `npm run tv-setup`. Its log is `/run/minimal-launcher/allow-admanager.log`.
 - `50-watchdog`: every 5 minutes, starts the power-on watcher and the helper again if either has stopped. Its log is `/run/minimal-launcher/watchdog.log`.
 - `30-launcher-on-wake`: opens the launcher when the TV is turned on with the remote (the TV reports why it turned on: `getPowerOnReason` says `remoteKey`), and for 20 seconds takes the screen back if a device woken with the TV grabs it over HDMI-CEC. When something else turned the TV on, such as a console over HDMI-CEC, it stays where that put it. Its log is `/run/minimal-launcher/launcher-on-wake.log`; `30-launcher-on-wake states` prints power states as they change.
 
 ### Commercial mute
 
-`tv/bin/commercial-mute` toggles the TV's mute: muting starts a 2½-minute timer that unmutes it again, and a press while muted unmutes at once. It uses `com.webos.service.audio/master/muteVolume`, the mute the remote's button toggles (`com.webos.audio` has a separate one). Input Hook swallows a key it runs a command for, and kills what the command leaves behind, so the timer runs detached with `setsid`. `tv/lginputhook/keybinds.json` puts it on the remote's Mute button (code 113), next to Home and Exit → launcher (773 and 174) 1 → LG's home bar (2) and the dot → the sidebar (1038). `npm run tv-setup` installs both. To change the length, edit the `150` in the keybinds file.
+`tv/bin/commercial-mute` toggles the TV's mute: muting starts a 2½-minute timer that unmutes it again, and a press while muted unmutes at once. It uses `com.webos.service.audio/master/muteVolume`, the mute the remote's button toggles (`com.webos.audio` has a separate one). Input Hook swallows a key it runs a command for, and kills what the command leaves behind, so the timer runs detached with `setsid`. `tv/lginputhook/keybinds.json` puts it on the remote's Mute button (code 113), next to Home and Exit → launcher (773 and 174), 1 → LG's home bar (2) and the dot → the sidebar (1038). `npm run tv-setup` installs both. To change the length, edit the `150` in the keybinds file.
 
 ### Menu
 
@@ -178,13 +179,19 @@ Pressing Left on the first tile of any row slides out a menu (Up/Down to move, O
 - **Inputs**: switch straight to one.
 - **Picture & sound** (rooted TVs): the picture mode and sound mode of the apps and of each input (LG keeps one of each per input), from the modes the TV offers.
 - **Sleep timer** (rooted TVs): 30, 60, 90 or 120 minutes, with a TV notification a minute before. The helper on the TV runs it, so it works whatever app is on screen.
-- **Launcher settings**: theme, icons, the glass color (with glass icons on), when the screensaver starts and what it shows, a button to start it now, 12- or 24-hour clock, °F or °C, showing hidden apps. Saved with the layout backup.
+- **Launcher settings**: theme, icons, the glass color (with glass icons on), Night mode, when the screensaver starts and what it shows, a button to start it now, 12- or 24-hour clock, °F or °C, showing hidden apps. Saved with the layout backup.
 - **HDMI settings** (rooted TVs): per input, Deep Color (needed for 4K HDR at full quality) and PC mode; and SIMPLINK (HDMI-CEC) and Auto Power Sync for the whole TV. These are the TV's own settings, read and changed through `com.webos.settingsservice` as root.
-- **System**: LG's settings app; turning the TV off and rebooting it, each after a second OK.
+- **System**: LG's settings app; turning the TV off and rebooting it, each after a second OK. Turning off darkens the screen at once (`tv/bin/power-off` switches the panel off, then powers the TV down), so it feels as quick as the remote's power button.
+
+### Night mode
+
+From the hour picked in Launcher settings (9, 10 or 11 PM, or midnight) until 7 AM, the launcher dims itself, the screensaver included. On a rooted TV the helper also turns on the TV's Eye Comfort Mode (warmer colors) and sets energy saving to medium (a dimmer screen), whatever is on screen, and in the morning puts back what they were before. Both are TV-wide settings. While night mode is on, the earlier values are kept in `/home/root/.config/minimal-launcher/night.json`.
 
 ### Phone remote
 
-The helper serves a remote control page on port 8765 for phones on the home network: a D-pad with OK and Back, Home (the launcher), LG's home bar, volume, the commercial mute, play controls, power off (with a second tap), and your apps and inputs. Buttons go through the TV's own network remote service, using the client key the computer was approved with. `npm run tv-setup` prints a private link (`http://<tv>:8765/?k=…`): opening it once on a phone saves the key in a cookie, and the page refuses anyone without it.
+The helper serves a remote control page on port 8765 for phones on the home network: a D-pad with OK and Back, Home (the launcher), LG's home bar, volume, the commercial mute, play controls, power off, and your apps and inputs. Buttons go through the TV's own network remote service, using the client key the computer was approved with. `npm run tv-setup` prints a private link (`http://<tv>:8765/?k=…`): opening it once on a phone saves the key in a cookie, and the page refuses anyone without it.
+
+**Type on the TV**: with a text box open on the TV (one that brings up LG's own keyboard, as the web browser and many apps do), what you type on the phone appears there as you type, and Enter submits it. Apps that draw their own keyboard, such as YouTube and most streaming apps, don't take it, so two buttons search directly: **Search YouTube** opens YouTube's results for the text, the way a voice search does, and **Search Plex** lists matching movies, shows and episodes from your server on the phone, with posters; tap one to open its page in PlxNative on the TV (with `plex.appId` set to another Plex app, that app just opens). The helper runs the Plex search, so the server's token never reaches the phone.
 
 ### Plex Watchlist
 

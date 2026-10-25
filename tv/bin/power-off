@@ -1,0 +1,18 @@
+#!/bin/sh
+# Turns the TV off for the launcher's menu and the phone remote. The screen goes dark at once,
+# like with the remote's power button, and then the TV powers down, which takes LG a couple of
+# seconds.
+
+# luna-send only answers with a terminal attached; script(1) gives it one. The address and the
+# message go through the environment, so nothing in them is read as shell syntax.
+luna() {
+  LUNA_URI=$1 LUNA_PAYLOAD=$2 script -q -c 'luna-send -n 1 "$LUNA_URI" "$LUNA_PAYLOAD"' /dev/null < /dev/null | tr -d '\r'
+}
+
+luna luna://com.webos.service.tvpower/power/turnOffScreen '{}' > /dev/null
+# Only a clear refusal counts: going into standby can cut the reply short.
+if luna luna://com.webos.service.tvpower/power/powerOff '{"reason":"remoteKey"}' | grep -q '"returnValue": *false'; then
+  # Don't leave a dark screen on a TV that's still on.
+  luna luna://com.webos.service.tvpower/power/turnOnScreen '{}' > /dev/null
+  exit 1
+fi
