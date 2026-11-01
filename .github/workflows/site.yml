@@ -1,0 +1,19 @@
+name: Site
+
+# Tells helixtech.app that a release is out, so it rebuilds and shows the
+# release within minutes instead of at its next daily run. SITE_TOKEN is a
+# fine-grained personal access token for the helix-site repository alone,
+# with contents read and write.
+on:
+  release:
+    types: [published]
+
+permissions: {}
+
+jobs:
+  tell-the-site:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh api repos/Commanderx-code/helix-site/dispatches -f event_type=tool-release -f "client_payload[repo]=$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ secrets.SITE_TOKEN }}
