@@ -12,6 +12,14 @@ import { isRooted } from './tv-root.mjs';
 
 const config = readConfig();
 const relay = config.relay || {};
+const publicOrigin = relay.publicOrigin || '';
+if (publicOrigin) {
+  let parsed;
+  try { parsed = new URL(publicOrigin); } catch { console.error('relay.publicOrigin must be an HTTPS origin.'); process.exit(1); }
+  if (parsed.protocol !== 'https:' || parsed.origin !== publicOrigin || parsed.username || parsed.password) {
+    console.error('relay.publicOrigin must be an HTTPS origin without a path or credentials.'); process.exit(1);
+  }
+}
 if (!relay.host) {
   console.error('Set "relay.host" in config.json to an always-on computer with Docker (user@host works too).');
   process.exit(1);
@@ -57,7 +65,7 @@ copy(path.join(ROOT, 'relay', 'relay.mjs'), `${dir}/relay.mjs`);
 copy(path.join(ROOT, 'relay', 'compose.yaml'), `${dir}/compose.yaml`);
 // A first copy of the remote page, for when the TV is off before the relay has loaded it.
 copy(path.join(ROOT, 'tv', 'helper', 'page.html'), `${dir}/data/page.html`);
-const env = `TV_HOST=${config.tv.host}\nTV_MAC=${mac}\nUID=${uid}\nGID=${gid}\nRELAY_DIR=${fullDir}\n`;
+const env = `TV_HOST=${config.tv.host}\nTV_MAC=${mac}\nUID=${uid}\nGID=${gid}\nRELAY_DIR=${fullDir}\nPUBLIC_ORIGIN=${publicOrigin}\n`;
 if (onRelay(`umask 077 && cat > ${quoted}/.env`, env).status !== 0) process.exit(1);
 if (onRelay(`umask 077 && cat > ${quoted}/data/remote.key`, key + '\n').status !== 0) process.exit(1);
 console.log(`copied the relay to ${relay.host}:${dir}`);
@@ -70,4 +78,8 @@ if (start.status === 0) {
   console.log(`\nCouldn't start it from here:\n${start.stdout.trim()}\n`);
   console.log(`Deploy the "tv-remote" project in your Docker manager (Arcane, Dockge), or on ${host} run:\n  cd ${dir} && sudo docker compose up -d --force-recreate`);
 }
-console.log(`\nPhone remote through the relay: http://${host}:8765/?k=${key}\n(Open it once on each phone; keep it private.)`);
+if (publicOrigin) {
+  console.log(`\nPhone remote through the relay: ${publicOrigin}/\nSign in once on each browser with the TV's private remote key.`);
+} else {
+  console.log(`\nPhone remote through the relay: http://${host}:8765/?k=${key}\n(Open it once on each phone; keep it private.)`);
+}

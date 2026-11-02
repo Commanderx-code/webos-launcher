@@ -35,12 +35,23 @@ if (MAC.length !== 6) {
 const BROADCAST = setting('BROADCAST', TV_HOST.replace(/\.\d+$/, '.255'));
 const PORT = Number(setting('PORT', '8765'));
 const DATA = setting('DATA', '/data');
+const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN || '';
 const KEY = fs.readFileSync(path.join(DATA, 'remote.key'), 'utf8').trim();
 const PAGE_COPY = path.join(DATA, 'page.html');
 // A sleeping TV doesn't refuse a connection, it just never answers; this long, and it's off.
 const CONNECT_MS = 2500;
 // Long enough for the TV's slowest answer, a Plex search.
 const ANSWER_MS = 15000;
+
+const LOGIN_PAGE = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TV remote — sign in</title>
+<style>body{font:18px system-ui;background:#121519;color:#eef2f6;max-width:28rem;margin:12vh auto;padding:1.5rem}input,button{font:inherit;box-sizing:border-box;width:100%;padding:.8rem;margin:.5rem 0;border-radius:.5rem}button{background:#74c9ff;border:0}p{line-height:1.5;color:#bbc7d2}</style>
+<h1>TV remote</h1><p>Enter your private remote key once on this browser. The key is the same one used by your TV launcher’s private remote link.</p>
+<form method="post" action="/login"><label for="key">Remote key</label><input id="key" name="key" type="password" autocomplete="current-password" required maxlength="256"><button>Open remote</button></form></html>`;
+
+function authCookie() {
+  return 'k=' + KEY + '; Max-Age=31536000; Path=/; HttpOnly; SameSite=Lax' +
+    (PUBLIC_ORIGIN.startsWith('https://') ? '; Secure' : '');
+}
 
 function log(msg) {
   console.log(new Date().toISOString() + ' ' + msg);
@@ -163,15 +174,31 @@ function tvOff(req, res) {
 
 http.createServer((req, res) => {
   const url = new URL(req.url, 'http://relay');
+  if (req.method === 'POST' && url.pathname === '/login') {
+    const origin = PUBLIC_ORIGIN || 'http://' + req.headers.host;
+    if (req.headers.origin && req.headers.origin !== origin) return send(res, 403, 'text/plain', 'Wrong origin.');
+    if (!(req.headers['content-type'] || '').startsWith('application/x-www-form-urlencoded')) return send(res, 415, 'text/plain', 'Use the sign-in form.');
+    return readBody(req).then(body => {
+      const given = new URLSearchParams(body.toString()).get('key');
+      if (!sameKey(given)) return send(res, 403, 'text/plain', 'Wrong remote key.');
+      send(res, 303, 'text/plain', '', {Location:'/', 'Set-Cookie':authCookie(), 'Referrer-Policy':'no-referrer'});
+    }).catch(() => send(res, 400, 'text/plain', 'Invalid sign-in request.'));
+  }
   // The same private link as the TV's own page, and the same cookie.
   if (url.searchParams.has('k')) {
     if (!sameKey(url.searchParams.get('k'))) return send(res, 403, 'text/plain', 'Wrong link.');
     return send(res, 302, 'text/plain', '', {
       Location: '/',
-      'Set-Cookie': 'k=' + KEY + '; Max-Age=31536000; Path=/; HttpOnly; SameSite=Lax',
+      'Set-Cookie': authCookie(),
     });
   }
-  if (!sameKey(cookieKey(req))) return send(res, 403, 'text/plain', 'Open the private link from the launcher setup on this phone first.');
+  if (!sameKey(cookieKey(req))) {
+    if (req.method === 'GET' && url.pathname === '/') return send(res, 200, 'text/html; charset=utf-8', LOGIN_PAGE, {
+      'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+      'Referrer-Policy':'no-referrer',
+    });
+    return send(res, 403, 'text/plain', 'Sign in with your private remote key first.');
+  }
 
   readBody(req).then((body) => {
     if (req.method === 'POST' && url.pathname === '/api/act' && isPower(body)) return power(req, res, body);

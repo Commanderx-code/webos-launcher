@@ -101,6 +101,7 @@ A stock TV won't let an app replace the Home button. Two things get close:
 | `screensaverNames` | Names for the screensaver's files in the sidebar's picker, by file name, e.g. `{"IMG_0042.jpg": "Mountain lake"}`. Files without one are named after the file. |
 | `relay.host` | The always-on computer that runs the phone remote's relay (`npm run relay-setup`), reached over SSH: a host, or `user@host`. |
 | `relay.dir` | Where the relay goes on that computer, a path from the SSH user's home folder or an absolute one (default `tv-remote`). For a Docker manager such as Arcane or Dockge, its projects folder plus `/tv-remote`. |
+| `relay.publicOrigin` | Optional HTTPS reverse-proxy origin, such as `https://tv.example.com`. Enables secure cookies and validates the sign-in form's browser origin. |
 | `tv.mac` | The MAC address of the TV's wired network port, for the relay to wake it. Read from the TV when it's left out. |
 | `plex.appId` | The app the Plex cards open, by app ID. Defaults to the official Plex app; e.g. `"com.beb.plxnative"` for PlxNative. |
 | `theme` | The starting theme: `ambient`, `aurora`, `midnight`, `ocean`, `sunset`, `space`, or a wallpaper's ID such as `wall-revan` (`wall-` and its name in lowercase, with dashes for spaces). Once you pick one with the blue button, the TV's choice wins. |
@@ -201,6 +202,8 @@ npm run relay-setup
 ```
 
 It copies the relay to that computer over SSH, with the TV's address, its MAC address and the remote's key, starts it with Docker Compose, and prints the relay's private link (`http://<server>:8765/?k=…`, the same key as the TV's). If your SSH user can't run Docker there, it says how to start it (with sudo, or as the `tv-remote` project in a Docker manager such as Arcane or Dockge: point `relay.dir` at its projects folder). Run it again after changing `relay/`; changes to the page reach the relay by themselves.
+
+The relay's plain bookmark now presents a sign-in form. Enter the same private key once; the browser receives an HttpOnly, SameSite cookie. With `relay.publicOrigin` configured, that cookie is also Secure. The form submits the key in a POST body instead of putting it in a new URL. Existing private links remain supported. The sign-in page does not grant access to control endpoints without the key. Run `node --test relay/relay.test.mjs` to check login, cookie protection, and cached-page recovery without contacting a real TV.
 
 **Type on the TV**: with a text box open on the TV (one that brings up LG's own keyboard, as the web browser and many apps do), what you type on the phone appears there as you type, and Enter submits it. Apps that draw their own keyboard, such as YouTube and most streaming apps, don't take it, so two buttons search directly: **Search YouTube** opens YouTube's results for the text, the way a voice search does, and **Search Plex** lists matching movies, shows and episodes from your server on the phone, with posters; tap one to open its page in PlxNative on the TV (with `plex.appId` set to another Plex app, that app just opens). The helper runs the Plex search, so the server's token never reaches the phone.
 
