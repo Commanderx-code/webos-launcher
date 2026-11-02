@@ -5,11 +5,14 @@
 # its wake-up packets reach the home network.
 services:
   tv-remote:
-    image: node:22-alpine
+    image: node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914
     container_name: tv-remote
     restart: unless-stopped
     network_mode: host
     user: "${UID}:${GID}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     working_dir: /relay
     command: node relay.mjs
     environment:
@@ -17,6 +20,7 @@ services:
       TV_MAC: ${TV_MAC}
       PORT: "8765"
       DATA: /data
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
     volumes:
       - ${RELAY_DIR}/relay.mjs:/relay/relay.mjs:ro
       - ${RELAY_DIR}/data:/data
