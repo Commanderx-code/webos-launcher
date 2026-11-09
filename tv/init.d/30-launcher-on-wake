@@ -40,7 +40,13 @@ foreground() {
   luna luna://com.webos.applicationManager/getForegroundAppInfo '{}' | field appId
 }
 
+# App IDs go into a command line that runs as root, so only plain reverse-domain IDs pass.
+plain_id() {
+  case "$1" in ''|*[!A-Za-z0-9._+-]*) return 1 ;; esac
+}
+
 launch() {
+  plain_id "$1" || { log "not launching odd app ID: $1"; return; }
   luna luna://com.webos.applicationManager/launch "{\"id\":\"$1\"}" > /dev/null
 }
 
@@ -53,7 +59,7 @@ track_on_screen() {
         app=$(echo "$line" | field appId)
         case "$app" in
           ''|com.webos.app.home|com.webos.app.fullhome|com.webos.app.volume|com.webos.app.livemenu) ;;
-          *) echo "$app" > "$ON_SCREEN" ;;
+          *) plain_id "$app" && echo "$app" > "$ON_SCREEN" ;;
         esac
       done
     # The subscription ended (the app manager restarted); subscribe again.
@@ -76,6 +82,7 @@ resume_last() {
     *) log "turned on by ${reason:-unknown}; leaving it on $(foreground)"; return ;;
   esac
   want=$(cat "$LAST" 2>/dev/null)
+  plain_id "$want" || want=""
   app=$(foreground)
   if [ -z "$want" ]; then
     # Nothing remembered yet. Only step in if the screen would otherwise stay empty.
