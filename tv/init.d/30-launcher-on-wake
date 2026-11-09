@@ -1,7 +1,8 @@
 #!/bin/sh
-# Opens the launcher when the TV is turned on with the remote. When something else turned it on
-# (the Xbox over HDMI-CEC, say) it stays where that put it. Watches the TV's power state from
-# the background; the Homebrew Channel runs this at boot.
+# Goes back to what was on screen at power-off (an input, an app or the launcher) when the TV is
+# turned on with the remote. When something else turned it on (the Xbox over HDMI-CEC, say) it
+# stays where that put it. Watches the TV's power state from the background; the Homebrew Channel
+# runs this at boot.
 #
 #   30-launcher-on-wake          start the watcher (what the Homebrew Channel does)
 #   30-launcher-on-wake states   print power states as they change, for testing
@@ -14,6 +15,10 @@ LAUNCHER=com.minimal.launcher
 RUN=/run/minimal-launcher
 LOG=$RUN/launcher-on-wake.log
 PIDFILE=$RUN/launcher-on-wake.pid
+# What's on screen now, kept up to date while the TV runs.
+ON_SCREEN=$RUN/on-screen
+# What was on screen at the last power-off. Kept across reboots.
+LAST=/home/root/.config/minimal-launcher/last-app
 # How long the TV gets to finish waking and show what it resumes to before we look.
 SETTLE=6
 BOOT_SETTLE=20
@@ -36,26 +41,61 @@ foreground() {
 }
 
 launch() {
-  luna luna://com.webos.applicationManager/launch "{\"id\":\"$LAUNCHER\"}" > /dev/null
+  luna luna://com.webos.applicationManager/launch "{\"id\":\"$1\"}" > /dev/null
+}
+
+# Keeps ON_SCREEN current. A power-off empties the screen and the system's overlays come and go,
+# and neither is something to go back to. (The helper leaves out the same system apps.)
+track_on_screen() {
+  while true; do
+    script -q -c "luna-send -i luna://com.webos.applicationManager/getForegroundAppInfo '{\"subscribe\":true}'" /dev/null < /dev/null |
+      tr -d '\r' | while read -r line; do
+        app=$(echo "$line" | field appId)
+        case "$app" in
+          ''|com.webos.app.home|com.webos.app.fullhome|com.webos.app.volume|com.webos.app.livemenu) ;;
+          *) echo "$app" > "$ON_SCREEN" ;;
+        esac
+      done
+    # The subscription ended (the app manager restarted); subscribe again.
+    sleep 5
+  done
+}
+
+remember() {
+  [ -s "$ON_SCREEN" ] || return
+  cp "$ON_SCREEN" "$LAST"
+  log "turning off on $(cat "$LAST")"
 }
 
 # The TV knows what turned it on: "remoteKey" for the remote's power button.
-open_launcher() {
+resume_last() {
   sleep "$1"
   reason=$(luna luna://com.webos.service.tvpower/power/getPowerOnReason '{}' | field reason)
   case "$reason" in
     remoteKey) ;;
     *) log "turned on by ${reason:-unknown}; leaving it on $(foreground)"; return ;;
   esac
+  want=$(cat "$LAST" 2>/dev/null)
   app=$(foreground)
-  [ "$app" != "$LAUNCHER" ] && log "turned on by the remote, on ${app:-nothing}; opening the launcher" && launch
+  if [ -z "$want" ]; then
+    # Nothing remembered yet. Only step in if the screen would otherwise stay empty.
+    [ -z "$app" ] && log "turned on by the remote, on nothing; opening the launcher" && launch "$LAUNCHER"
+    return
+  fi
+  if [ "$app" = "$want" ]; then
+    log "turned on by the remote, on $want as it was left"
+  else
+    log "turned on by the remote, on ${app:-nothing}; going back to $want"
+    launch "$want"
+  fi
   # A device woken with the TV (the Stream Box) can take the screen a few seconds later over
-  # HDMI-CEC. Bring the launcher back if it does, for the first 20 seconds.
+  # HDMI-CEC. Go back if it does, for the first 20 seconds.
   for wait in 5 5 5 5; do
     sleep "$wait"
     app=$(foreground)
     case "$app" in
-      com.webos.app.hdmi*|com.webos.app.externalinput*) log "$app took the screen; reopening the launcher"; launch ;;
+      "$want") ;;
+      com.webos.app.hdmi*|com.webos.app.externalinput*) log "$app took the screen; going back to $want"; launch "$want" ;;
     esac
   done
 }
@@ -71,7 +111,8 @@ states() {
 
 watch() {
   # Right after a boot, treat it as a power-on. A later start (reinstalling this) isn't one.
-  [ "$(cut -d. -f1 /proc/uptime)" -lt 180 ] && open_launcher "$BOOT_SETTLE" &
+  [ "$(cut -d. -f1 /proc/uptime)" -lt 180 ] && resume_last "$BOOT_SETTLE" &
+  track_on_screen &
   while true; do
     last=""
     states | while read -r state; do
@@ -80,7 +121,11 @@ watch() {
       # Only a real power-on counts: not leaving the screen-off mode or a screensaver.
       case "$last" in
         Suspend|"Active Standby"|"Power Off"|Off)
-          [ "$state" = Active ] && open_launcher "$SETTLE" &
+          [ "$state" = Active ] && resume_last "$SETTLE" &
+          ;;
+        *)
+          # Turning off: what's on screen now is what the next power-on goes back to.
+          case "$state" in Suspend|"Active Standby"|"Power Off"|Off) remember ;; esac
           ;;
       esac
       last=$state
